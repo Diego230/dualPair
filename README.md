@@ -4,13 +4,25 @@
 
 Use the same Bluetooth devices in Windows and Linux on a dual-boot PC, without pairing them again every time you switch.
 
-**Status: prototype (0.1.0).** Tested on fake data and on the logic used for one real device (a BLE mouse). Not yet tested on many real machines.
+**Status: prototype (0.1.0).** Tested on one real dual-boot PC (see [Tested on](#tested-on)). Not yet tested on many machines.
 
 ## Why devices stop working
 
 When you pair a device, the computer and the device agree on a secret key. Windows and Linux each create their own key for the same Bluetooth adapter, but the device only remembers the last one. So whichever system paired last works, and the other one is rejected.
 
 DualPair fixes this by copying Windows' keys into Linux. Both systems then use the same key.
+
+## Tested on
+
+One dual-boot PC (Windows + Ubuntu, Windows on NVMe, no BitLocker), November 2026:
+
+| Device | Type | Case | Result |
+|---|---|---|---|
+| TK-MS317 5.0 mouse | Bluetooth LE, static address, legacy pairing | Keys already copied by hand | Detected as *Works on both* |
+| JBL LIVE460NC headphones | Classic | *Keys differ* → synced | Works in Linux, then Windows, then Linux again, without pairing again |
+| JBL Go 3 speaker | Classic | *Only in Windows* → imported (experimental) | Not tested yet |
+
+Windows was found and read automatically. After syncing, audio devices may need one click on *Connect* in Linux: when they turn on, they reconnect to the last computer they were connected to, so after using Windows that is Windows. This is not a key problem: Connect works without pairing again.
 
 ## How to use it
 
