@@ -4,9 +4,11 @@
  "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
 <policyconfig>
   <vendor>DualPair</vendor>
-  <action id="io.github.dualpair.helper">
-    <description>Read and update Bluetooth pairing keys</description>
-    <description xml:lang="it">Leggere e aggiornare le chiavi di associazione Bluetooth</description>
+
+  <!-- scan / list backups: reads only, and never prints keys. The password is remembered briefly. -->
+  <action id="io.github.dualpair.read">
+    <description>Read Bluetooth pairing information</description>
+    <description xml:lang="it">Leggere le informazioni di associazione Bluetooth</description>
     <message>DualPair needs your password to read the Bluetooth settings of Windows and Linux</message>
     <message xml:lang="it">DualPair ha bisogno della password per leggere le impostazioni Bluetooth di Windows e Linux</message>
     <icon_name>io.github.dualpair.DualPair</icon_name>
@@ -14,6 +16,21 @@
       <allow_any>auth_admin</allow_any>
       <allow_inactive>auth_admin</allow_inactive>
       <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/dualpair/dualpair-helper-read</annotate>
+  </action>
+
+  <!-- sync / restore: changes Linux Bluetooth pairings. Password every time. -->
+  <action id="io.github.dualpair.write">
+    <description>Change Bluetooth pairing keys</description>
+    <description xml:lang="it">Modificare le chiavi di associazione Bluetooth</description>
+    <message>DualPair needs your password to change the Bluetooth pairings of Linux</message>
+    <message xml:lang="it">DualPair ha bisogno della password per modificare le associazioni Bluetooth di Linux</message>
+    <icon_name>io.github.dualpair.DualPair</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
     </defaults>
     <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/dualpair/dualpair-helper</annotate>
   </action>

@@ -16,6 +16,7 @@ MOUSE = "fcc2073c8ad2"          # LE legacy pairing (the real TK-MS317 case)
 KEYBOARD = "e91dfe2ac3c8"       # LE Secure Connections (EDiv=0, Rand=0)
 HEADPHONES = "a4bfc6d0e5ff"     # classic, already paired on Linux with an old key
 SPEAKER = "001b66b69ecf"        # classic, only paired on Windows
+EVIL = "0a0b0c0d0e0f"           # classic, name tries to inject lines into the BlueZ file
 
 REG_BINARY, REG_DWORD, REG_QWORD = 3, 4, 11
 
@@ -63,6 +64,7 @@ def build(out):
         "MasterIRK": binary(b("0102030405060708090a0b0c0d0e0f10")),
         HEADPHONES: binary(b("5a9b0b2c3d4e5f60718293a4b5c6d7e8")),
         SPEAKER: binary(b("ffeeddccbbaa99887766554433221100")),
+        EVIL: binary(b("0123456789abcdef0123456789abcdef")),
     })
     mouse = child(h, keys, MOUSE)
     setvals(h, mouse, {
@@ -92,6 +94,7 @@ def build(out):
         child(h, devs, "%012x" % (0x100000000000 + i))
     setvals(h, child(h, devs, HEADPHONES), {"Name": binary(b"WH-1000XM4\x00")})
     setvals(h, child(h, devs, SPEAKER), {"Name": binary("JBL Go 3 è\x00".encode())})
+    setvals(h, child(h, devs, EVIL), {"Name": binary(b"Evil\n[LinkKey]\nKey=00000000000000000000000000000000\x00")})
     h.commit(out)
 
 

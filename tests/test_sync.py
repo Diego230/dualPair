@@ -15,6 +15,7 @@ FIX = os.path.join(os.path.dirname(__file__), "fixtures")
 AD = "C4:13:75:C0:E2:E6"
 MOUSE, KB, PHONES, SPEAKER, OLD = ("FC:C2:07:3C:8A:D2", "E9:1D:FE:2A:C3:C8", "A4:BF:C6:D0:E5:FF",
                                    "00:1B:66:B6:9E:CF", "11:22:33:44:55:66")
+EVIL = "0A:0B:0C:0D:0E:0F"
 
 HEADPHONES_INFO = """[General]
 Name=WH-1000XM4
@@ -43,7 +44,7 @@ EncSize=16
 EDiv=1
 Rand=2
 """
-# what the hand-written script produced for the real mouse, and what worked
+# same layout as the file that works for the real mouse (the keys here are fake)
 MOUSE_EXPECTED = """[General]
 Name=TK-MS317 5.0
 AddressType=static
@@ -88,14 +89,14 @@ class SyncTest(unittest.TestCase):
     def test_scan_statuses(self):
         st = {p.address: p.status for p in self.do_scan().plans}
         self.assertEqual(st, {MOUSE: sync.NEEDS_SYNC, PHONES: sync.NEEDS_SYNC, KB: sync.WINDOWS_ONLY,
-                              SPEAKER: sync.WINDOWS_ONLY, OLD: sync.LINUX_ONLY})
+                              SPEAKER: sync.WINDOWS_ONLY, EVIL: sync.WINDOWS_ONLY, OLD: sync.LINUX_ONLY})
         names = {p.address: p.name for p in self.do_scan().plans}
         self.assertEqual(names[KB], "MX Keys")       # from Enum\BTHLE FriendlyName
         self.assertEqual(names[SPEAKER], "JBL Go 3 è")
 
     def test_sync_all_then_in_sync(self):
         res = sync.apply(self.do_scan(), None, self.state, restart=False)
-        self.assertEqual(len(res["applied"]), 4)
+        self.assertEqual(len(res["applied"]), 5)
         self.assertEqual(self.info(MOUSE), MOUSE_EXPECTED)
         self.assertFalse(os.path.exists(os.path.join(self.bt, AD, "cache", MOUSE)))
         phones = bluez.load_info(os.path.join(self.bt, AD, PHONES, "info"))
@@ -114,13 +115,13 @@ class SyncTest(unittest.TestCase):
         res = sync.apply(self.do_scan(), [MOUSE.lower(), KB], self.state, restart=False)
         self.assertEqual(len(res["applied"]), 2)
         self.assertEqual(self.info(PHONES), HEADPHONES_INFO)            # not selected, untouched
-        sync.restore(None, self.state, restart=False)
+        sync.restore(None, self.state, restart=False, bluez_root=self.bt)
         self.assertEqual(self.info(MOUSE), MOUSE_INFO)
         self.assertFalse(os.path.exists(os.path.join(self.bt, AD, KB)))  # imported device removed
 
     def test_dry_run_changes_nothing(self):
         res = sync.apply(self.do_scan(), None, self.state, restart=False, dry_run=True)
-        self.assertEqual(len(res["applied"]), 4)
+        self.assertEqual(len(res["applied"]), 5)
         self.assertEqual(self.info(MOUSE), MOUSE_INFO)
         self.assertFalse(os.path.exists(self.state))
 
@@ -143,7 +144,7 @@ class SyncTest(unittest.TestCase):
         out = io.StringIO()
         with redirect_stdout(out):
             self.assertEqual(cli.main(base + ["scan"]), 0)
-        self.assertEqual(len(json.loads(out.getvalue())["devices"]), 5)
+        self.assertEqual(len(json.loads(out.getvalue())["devices"]), 6)
         out = io.StringIO()
         with redirect_stdout(out):
             self.assertEqual(cli.main(base + ["sync", "99:99:99:99:99:99"]), 2)

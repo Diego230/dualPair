@@ -19,21 +19,23 @@ from . import __version__  # noqa: E402
 from .i18n import t  # noqa: E402
 
 APP_ID = "io.github.dualpair.DualPair"
-INSTALLED_HELPER = "/usr/lib/dualpair/dualpair-helper"
+INSTALLED_HELPER = "/usr/lib/dualpair/dualpair-helper"            # sync, restore: password every time
+INSTALLED_READ_HELPER = "/usr/lib/dualpair/dualpair-helper-read"  # scan, backups: password remembered briefly
 
 
-def helper_command() -> list[str]:
+def helper_command(write: bool = False) -> list[str]:
     override = os.environ.get("DUALPAIR_HELPER")   # for development and tests: no pkexec
     if override:
         return shlex.split(override)
-    if os.path.exists(INSTALLED_HELPER):
-        return ["pkexec", INSTALLED_HELPER]
+    helper = INSTALLED_HELPER if write else INSTALLED_READ_HELPER
+    if os.path.exists(helper):
+        return ["pkexec", helper]
     pkg_parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     return ["pkexec", "env", f"PYTHONPATH={pkg_parent}", sys.executable, "-m", "dualpair"]
 
 
 def run_helper(*args) -> dict:
-    cmd = helper_command() + ["--json", *args]
+    cmd = helper_command(write=args[0] in ("sync", "restore")) + ["--json", *args]
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
     except (OSError, subprocess.TimeoutExpired) as e:

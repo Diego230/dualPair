@@ -20,6 +20,14 @@ sys.path.insert(0, "/usr/lib/dualpair")
 from dualpair.cli import main
 sys.exit(main())
 EOF
+cat > "$ROOT/usr/lib/dualpair/dualpair-helper-read" <<'EOF'
+#!/usr/bin/python3
+# Read-only helper (scan, backups): started by the DualPair window through pkexec.
+import sys
+sys.path.insert(0, "/usr/lib/dualpair")
+from dualpair.cli import main
+sys.exit(main(read_only=True))
+EOF
 cat > "$ROOT/usr/bin/dualpair" <<'EOF'
 #!/usr/bin/python3
 import sys
@@ -33,7 +41,7 @@ cat > "$ROOT/usr/bin/dualpair-cli" <<'EOF'
 [ "$(id -u)" -eq 0 ] || exec sudo "$0" "$@"
 exec /usr/lib/dualpair/dualpair-helper "$@"
 EOF
-chmod 755 "$ROOT/usr/lib/dualpair/dualpair-helper" "$ROOT/usr/bin/dualpair" "$ROOT/usr/bin/dualpair-cli"
+chmod 755 "$ROOT/usr/lib/dualpair/dualpair-helper" "$ROOT/usr/lib/dualpair/dualpair-helper-read" "$ROOT/usr/bin/dualpair" "$ROOT/usr/bin/dualpair-cli"
 install -m 644 data/io.github.dualpair.DualPair.desktop "$ROOT/usr/share/applications/"
 install -m 644 data/io.github.dualpair.DualPair.svg "$ROOT/usr/share/icons/hicolor/scalable/apps/"
 install -m 644 data/io.github.dualpair.policy "$ROOT/usr/share/polkit-1/actions/"

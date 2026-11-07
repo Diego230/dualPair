@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -13,6 +14,10 @@ from .errors import DualPairError
 from .windows import WindowsData, WinDevice
 
 STATE_DIR = "/var/lib/dualpair"
+KEEP_BACKUPS = 5             # newest backups kept; older ones are deleted
+MAX_BACKUP_AGE_DAYS = 30     # ...and none older than this, except the newest
+_BACKUP_ID = re.compile(r"^\d{8}-\d{6}(-\d+)?$")
+_KEY_LINE = re.compile(r"^(Key=).*$", re.MULTILINE)
 
 IN_SYNC = "in_sync"            # works on both systems
 NEEDS_SYNC = "needs_sync"      # paired on both, keys differ -> copy from Windows
@@ -191,8 +196,12 @@ def _backup_root(state_dir: str) -> str:
     return root
 
 
+def redact(info: str) -> str:
+    return _KEY_LINE.sub(r"\1<hidden>", info)
+
+
 def apply(s: Scan, addresses: list[str] | None, state_dir: str = STATE_DIR,
-          restart: bool = True, force: bool = False, dry_run: bool = False) -> dict:
+          restart: bool = True, force: bool = False, dry_run: bool = False, show_keys: bool = False) -> dict:
     """Copy Windows keys for the given addresses (None = every actionable device)."""
     if s.windows.hive_dirty and not force:
         raise DualPairError("hive_dirty")
@@ -208,7 +217,8 @@ def apply(s: Scan, addresses: list[str] | None, state_dir: str = STATE_DIR,
 
     contents = [(p, bluez.dump_info(build_info(p))) for p in todo]
     if dry_run:
-        return {"applied": [dict(p.to_dict(), info=c) for p, c in contents], "backup_id": None, "dry_run": True}
+        return {"applied": [dict(p.to_dict(), info=c if show_keys else redact(c)) for p, c in contents],
+                "backup_id": None, "dry_run": True}
 
     backup_id = time.strftime("%Y%m%d-%H%M%S")
     bdir = os.path.join(_backup_root(state_dir), backup_id)
@@ -243,7 +253,21 @@ def apply(s: Scan, addresses: list[str] | None, state_dir: str = STATE_DIR,
                 os.remove(cache)
     finally:
         _systemctl("start", restart)
+    prune_backups(state_dir)
     return {"applied": [p.to_dict() for p in todo], "backup_id": backup_id, "dry_run": False}
+
+
+def prune_backups(state_dir: str = STATE_DIR, keep: int = KEEP_BACKUPS, max_age_days: int = MAX_BACKUP_AGE_DAYS):
+    """Old backups hold old keys in clear text: keep only the few newest, and none older than a month."""
+    root = os.path.join(state_dir, "backups")
+    if not os.path.isdir(root):
+        return
+    ids = sorted((b for b in os.listdir(root) if _BACKUP_ID.match(b)), reverse=True)
+    cutoff = time.time() - max_age_days * 86400
+    for i, b in enumerate(ids):
+        path = os.path.join(root, b)
+        if i >= keep or (i > 0 and os.path.getmtime(path) < cutoff):
+            shutil.rmtree(path, ignore_errors=True)
 
 
 def list_backups(state_dir: str = STATE_DIR) -> list[dict]:
@@ -252,6 +276,8 @@ def list_backups(state_dir: str = STATE_DIR) -> list[dict]:
     if not os.path.isdir(root):
         return out
     for b in sorted(os.listdir(root), reverse=True):
+        if not _BACKUP_ID.match(b):
+            continue
         m = os.path.join(root, b, "manifest.json")
         if os.path.isfile(m):
             with open(m) as f:
@@ -261,32 +287,46 @@ def list_backups(state_dir: str = STATE_DIR) -> list[dict]:
     return out
 
 
-def restore(backup_id: str | None = None, state_dir: str = STATE_DIR, restart: bool = True) -> dict:
+def restore(backup_id: str | None = None, state_dir: str = STATE_DIR, restart: bool = True,
+            bluez_root: str = bluez.BLUEZ_DIR) -> dict:
     backups = list_backups(state_dir)
     if not backups:
         raise DualPairError("no_backups")
     if backup_id is None:
         backup_id = backups[0]["id"]
+    if not _BACKUP_ID.match(backup_id):
+        raise DualPairError("unknown_backup", backup=backup_id)
     bdir = os.path.join(state_dir, "backups", backup_id)
     if not os.path.isfile(os.path.join(bdir, "manifest.json")):
         raise DualPairError("unknown_backup", backup=backup_id)
     with open(os.path.join(bdir, "manifest.json")) as f:
         man = json.load(f)
-    root = man["bluez_root"]
+    # never trust paths from the manifest: names must be MAC addresses, target is our BlueZ folder
+    if os.path.realpath(man.get("bluez_root", "")) != os.path.realpath(bluez_root):
+        raise DualPairError("bad_backup", backup=backup_id)
+    entries = man.get("entries", [])
+    for e in entries:
+        if not (isinstance(e, dict) and bluez.MAC_RE.match(str(e.get("adapter")))
+                and bluez.MAC_RE.match(str(e.get("address")))):
+            raise DualPairError("bad_backup", backup=backup_id)
+        if e.get("existed"):
+            src = os.path.join(bdir, e["adapter"], e["address"], "info")
+            if os.path.islink(src) or not os.path.isfile(src):
+                raise DualPairError("bad_backup", backup=backup_id)
     _systemctl("stop", restart)
     try:
-        for e in man["entries"]:
-            dev_dir = os.path.join(root, e["adapter"], e["address"])
+        for e in entries:
+            dev_dir = os.path.join(bluez_root, e["adapter"], e["address"])
             if e["existed"]:
-                os.makedirs(dev_dir, mode=0o700, exist_ok=True)
-                shutil.copy2(os.path.join(bdir, e["adapter"], e["address"], "info"), os.path.join(dev_dir, "info"))
-            elif not e.get("dir_existed") and os.path.isdir(dev_dir):
+                with open(os.path.join(bdir, e["adapter"], e["address"], "info"), "rb") as f:
+                    bluez.write_bytes(f.read(), os.path.join(dev_dir, "info"))
+            elif not e.get("dir_existed") and os.path.isdir(dev_dir) and not os.path.islink(dev_dir):
                 shutil.rmtree(dev_dir)
             elif os.path.isfile(os.path.join(dev_dir, "info")):
                 os.remove(os.path.join(dev_dir, "info"))
-            cache = os.path.join(root, e["adapter"], "cache", e["address"])
+            cache = os.path.join(bluez_root, e["adapter"], "cache", e["address"])
             if os.path.isfile(cache):
                 os.remove(cache)
     finally:
         _systemctl("start", restart)
-    return {"restored": backup_id, "devices": [e.get("name") or e["address"] for e in man["entries"]]}
+    return {"restored": backup_id, "devices": [e.get("name") or e["address"] for e in entries]}

@@ -23,6 +23,18 @@ _HEX12 = re.compile(r"^[0-9a-fA-F]{12}$")
 HIVE_RELPATH = ("Windows", "System32", "config", "SYSTEM")
 
 
+_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def clean_name(name) -> str | None:
+    """Device names come from the Windows registry, i.e. from outside: drop control characters
+    (a newline could add lines to the BlueZ file) and cap the length (Bluetooth names are <= 248 bytes)."""
+    if not isinstance(name, str):
+        return None
+    name = _CONTROL.sub("", name).strip()[:248]
+    return name or None
+
+
 def to_mac(hex12: str) -> str:
     h = hex12.upper()
     return ":".join(h[i:i + 2] for i in range(0, 12, 2))
@@ -76,11 +88,8 @@ def _name_from_devices(devices_key, hex12: str) -> str | None:
         return None
     raw = k.get("Name")
     if isinstance(raw, bytes):
-        name = raw.split(b"\x00", 1)[0].decode("utf-8", errors="replace").strip()
-        return name or None
-    if isinstance(raw, str):
-        return raw.strip() or None
-    return None
+        return clean_name(raw.split(b"\x00", 1)[0].decode("utf-8", errors="replace"))
+    return clean_name(raw)
 
 
 def _name_from_bthle(bthle_key, hex12: str) -> str | None:
@@ -89,9 +98,9 @@ def _name_from_bthle(bthle_key, hex12: str) -> str | None:
         return None
     k = bthle_key.subkey("Dev_" + hex12)
     for inst in (k.subkeys() if k else []):
-        name = inst.get("FriendlyName")
-        if isinstance(name, str) and name.strip():
-            return name.strip()
+        name = clean_name(inst.get("FriendlyName"))
+        if name:
+            return name
     return None
 
 

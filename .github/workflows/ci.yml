@@ -42,6 +42,13 @@ jobs:
           sudo dualpair-cli --win tests/fixtures/SYSTEM --bluez-dir /tmp/bt --state-dir /tmp/state sync --all
           sudo dualpair-cli --win tests/fixtures/SYSTEM --bluez-dir /tmp/bt --state-dir /tmp/state --json scan \
             | python3 -c "import json,sys; d=json.load(sys.stdin); s={x['status'] for x in d['devices']}; print(s); assert s=={'in_sync'}"
+          # started through pkexec, the helpers must refuse custom paths, key printing and (read helper) writes
+          sudo env PKEXEC_UID=1000 /usr/lib/dualpair/dualpair-helper --json --bluez-dir /tmp/bt scan | grep -q option_not_allowed
+          sudo env PKEXEC_UID=1000 /usr/lib/dualpair/dualpair-helper --json sync --all --dry-run --show-keys | grep -q option_not_allowed
+          sudo /usr/lib/dualpair/dualpair-helper-read --json --win tests/fixtures/SYSTEM --bluez-dir /tmp/bt sync --all | grep -q read_only
+          sudo dualpair-cli --win tests/fixtures/SYSTEM --bluez-dir /tmp/bt --state-dir /tmp/state sync --all --dry-run \
+            | grep '^Key=' | grep -vqx 'Key=<hidden>' && { echo "keys printed"; exit 1; } || true
+          echo "helper restrictions ok"
           # the window module must import with the distro's GTK4/libadwaita
           /usr/bin/python3 -c "import sys; sys.path.insert(0, '/usr/lib/dualpair'); import dualpair.gui; print('gui import ok')"
           desktop-file-validate /usr/share/applications/io.github.dualpair.DualPair.desktop || true

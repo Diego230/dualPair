@@ -30,14 +30,21 @@ def dump_info(cfg: configparser.ConfigParser) -> str:
     return buf.getvalue().rstrip("\n") + "\n"
 
 
-def write_info(cfg: configparser.ConfigParser, path: str):
+def write_bytes(data: bytes, path: str):
+    """Atomic write, readable by root only. Refuses to follow symlinks."""
     os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
     os.chmod(os.path.dirname(path), 0o700)
     tmp = path + ".dualpair-tmp"
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write(dump_info(cfg))
+    if os.path.lexists(tmp):
+        os.remove(tmp)
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "wb") as f:
+        f.write(data)
     os.replace(tmp, path)
+
+
+def write_info(cfg: configparser.ConfigParser, path: str):
+    write_bytes(dump_info(cfg).encode("utf-8"), path)
 
 
 @dataclass

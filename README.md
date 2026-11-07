@@ -4,7 +4,7 @@
 
 Use the same Bluetooth devices in Windows and Linux on a dual-boot PC, without pairing them again every time you switch.
 
-**Status: prototype (0.1.0).** Tested on one real dual-boot PC (see [Tested on](#tested-on)). Not yet tested on many machines.
+**Status: prototype (0.1.1).** Tested on one real dual-boot PC (see [Tested on](#tested-on)). Not yet tested on many machines.
 
 ## Why devices stop working
 
@@ -40,7 +40,7 @@ To undo the last sync, open the menu and choose **Undo last sync**.
 - Linux reads the Windows registry file (`Windows/System32/config/SYSTEM`) straight from the Windows partition. The partition is mounted **read-only**: **Windows is never modified**.
 - The keys are in `ControlSet00N\Services\BTHPORT\Parameters\Keys`. Classic Bluetooth devices have a link key. Bluetooth LE devices have LTK, EDIV, ERand and IRK.
 - DualPair writes them into BlueZ (`/var/lib/bluetooth/<adapter>/<device>/info`). It keeps everything else in the existing file and backs up every file it changes to `/var/lib/dualpair/backups`.
-- The window runs as your user. Reading and writing system files is done by a small helper started with `pkexec`.
+- The window runs as your user. Reading and writing system files is done by small helpers started with `pkexec` (see [Security](#security)).
 
 Device states:
 
@@ -51,13 +51,32 @@ Device states:
 | Works on both | Same key on both systems | Nothing to do |
 | Only in Linux | Not paired in Windows | Pair it in Windows, then sync |
 
+## Security
+
+**Where keys are stored.** Windows keeps them in the `SYSTEM` registry file, readable by anyone who can read the disk unless BitLocker is on. Linux keeps them in `/var/lib/bluetooth`, readable by root. Both store them unencrypted. DualPair adds one more copy: backups in `/var/lib/dualpair/backups` (root only).
+
+**What a stolen key allows.** It works only for that computer and that device. Someone nearby who has it can decrypt the traffic (keystrokes, for a keyboard), or pretend to be the device or the computer by also copying its Bluetooth address. Getting the keys already requires root on Linux, administrator rights on Windows, or physical access to an unencrypted disk. The real protection is disk encryption on both systems (BitLocker and LUKS).
+
+**What DualPair does to stay out of the way:**
+
+- Windows is mounted read-only (`ro,nosuid,nodev,noexec`) and never modified. The registry file is parsed by a pure-Python, read-only parser: a malformed file can make it fail, not run code.
+- Two helpers, two polkit actions. `dualpair-helper-read` (scan, list backups) can only read and never prints keys; the password is remembered for a few minutes. `dualpair-helper` (sync, restore) asks for the password every time.
+- Started through `pkexec`, the helpers refuse every option that changes paths (`--win`, `--bluez-dir`, `--state-dir`) and `--show-keys`. Otherwise a program running as your user could steer them to read, write or delete files as root.
+- Restore only accepts backups whose names, paths and target folder are exactly what DualPair writes: no `..`, no symlinks, no other folders.
+- `--dry-run` hides keys (`Key=<hidden>`). `--show-keys` works only for root through `sudo`, never through `pkexec`.
+- Device names from Windows are stripped of control characters, so a name cannot add lines to BlueZ files.
+- Old backups hold old keys: only the newest 5 are kept, and none older than 30 days (except the newest).
+- Files are written atomically, with mode 600, without following symlinks.
+
+The test data in this repository uses fake keys.
+
 ## Command line
 
 ```
 sudo dualpair-cli scan                 # list devices and their state
 sudo dualpair-cli sync --all           # copy every key that needs it
 sudo dualpair-cli sync FC:C2:07:3C:8A:D2
-sudo dualpair-cli sync --all --dry-run # show the files it would write
+sudo dualpair-cli sync --all --dry-run # show the files it would write (keys hidden; add --show-keys to see them)
 sudo dualpair-cli backups
 sudo dualpair-cli restore              # undo the last sync
 sudo dualpair-cli --win /path/to/SYSTEM scan   # use a specific hive file or Windows folder
