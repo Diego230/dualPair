@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <vendor>DualPair</vendor>
+  <action id="io.github.dualpair.helper">
+    <description>Read and update Bluetooth pairing keys</description>
+    <description xml:lang="it">Leggere e aggiornare le chiavi di associazione Bluetooth</description>
+    <message>DualPair needs your password to read the Bluetooth settings of Windows and Linux</message>
+    <message xml:lang="it">DualPair ha bisogno della password per leggere le impostazioni Bluetooth di Windows e Linux</message>
+    <icon_name>io.github.dualpair.DualPair</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/dualpair/dualpair-helper</annotate>
+  </action>
+</policyconfig>

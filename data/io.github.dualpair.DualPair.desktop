@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=DualPair
+GenericName=Bluetooth dual boot sync
+GenericName[it]=Bluetooth per il dual boot
+Comment=Use the same Bluetooth devices in Windows and Linux without pairing them again
+Comment[it]=Usa gli stessi dispositivi Bluetooth in Windows e Linux senza riassociarli
+Exec=dualpair
+Icon=io.github.dualpair.DualPair
+Terminal=false
+Categories=Settings;HardwareSettings;
+Keywords=bluetooth;dual boot;windows;pairing;mouse;keyboard;headphones;
+StartupNotify=true
