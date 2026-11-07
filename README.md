@@ -1,5 +1,7 @@
 # DualPair
 
+[![CI](https://github.com/Diego230/dualPair/actions/workflows/ci.yml/badge.svg)](https://github.com/Diego230/dualPair/actions/workflows/ci.yml)
+
 Use the same Bluetooth devices in Windows and Linux on a dual-boot PC, without pairing them again every time you switch.
 
 **Status: prototype (0.1.0).** Tested on fake data and on the logic used for one real device (a BLE mouse). Not yet tested on many real machines.
@@ -73,6 +75,17 @@ To try the window on fake data without root:
 ```
 DUALPAIR_HELPER="python3 -m dualpair --win tests/fixtures/SYSTEM --bluez-dir /tmp/bt --state-dir /tmp/state" \
 python3 -c "from dualpair.gui import main; main()"
+```
+
+## Continuous integration
+
+On every push and pull request, GitHub Actions runs the tests on Ubuntu 22.04 and 24.04, builds the `.deb`, installs it and runs a quick check on the installed package. The `.deb` can be downloaded from the run page (artifact `dualpair-deb`).
+
+To publish a release with the `.deb` attached, push a version tag:
+
+```
+git tag v0.1.0
+git push origin v0.1.0
 ```
 
 ## Layout

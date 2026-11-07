@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # 22.04 = oldest supported target (Python 3.10, libadwaita 1.1)
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unit tests (system Python)
+        run: |
+          /usr/bin/python3 --version
+          /usr/bin/python3 -m unittest discover -s tests -t . -v
+
+      - name: Build .deb
+        run: packaging/build-deb.sh
+
+      - name: Install the .deb
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ./dist/dualpair_*_all.deb
+
+      - name: Smoke test the installed package
+        run: |
+          mkdir -p /tmp/bt/C4:13:75:C0:E2:E6
+          sudo dualpair-cli --win tests/fixtures/SYSTEM --bluez-dir /tmp/bt --state-dir /tmp/state scan
+          sudo dualpair-cli --win tests/fixtures/SYSTEM --bluez-dir /tmp/bt --state-dir /tmp/state sync --all
+          sudo dualpair-cli --win tests/fixtures/SYSTEM --bluez-dir /tmp/bt --state-dir /tmp/state --json scan \
+            | python3 -c "import json,sys; d=json.load(sys.stdin); s={x['status'] for x in d['devices']}; print(s); assert s=={'in_sync'}"
+          # the window module must import with the distro's GTK4/libadwaita
+          /usr/bin/python3 -c "import sys; sys.path.insert(0, '/usr/lib/dualpair'); import dualpair.gui; print('gui import ok')"
+          desktop-file-validate /usr/share/applications/io.github.dualpair.DualPair.desktop || true
+
+      - name: Upload .deb
+        if: matrix.os == 'ubuntu-24.04'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dualpair-deb
+          path: dist/*.deb
+
+  release:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dualpair-deb
+          path: dist
+      - name: Create GitHub release with the .deb
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" dist/*.deb --repo "${GITHUB_REPOSITORY}" --title "DualPair ${GITHUB_REF_NAME}" --generate-notes
