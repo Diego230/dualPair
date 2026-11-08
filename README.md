@@ -1,8 +1,10 @@
 # DualPair
 
 [![CI](https://github.com/Diego230/dualPair/actions/workflows/ci.yml/badge.svg)](https://github.com/Diego230/dualPair/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/Diego230/dualPair?include_prereleases)](https://github.com/Diego230/dualPair/releases)
+[![License: GPL v3](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
 
-Fixes what breaks when Windows and Linux share a PC (dual boot). Two apps, one per system: **DualPair for Linux** and **DualPair for Windows**. Each works alone for simple fixes; together they handle the rest, exchanging data through the EFI partition both systems can read.
+**Windows and Linux on the same PC, without the hassle.** DualPair fixes what breaks on dual-boot PCs. Two apps, one per system: **DualPair for Linux** and **DualPair for Windows**. Each works alone for simple fixes; together they handle the rest, exchanging data through the EFI partition both systems can read.
 
 - **Bluetooth**: use the same devices in both systems without pairing them again every time you switch.
 - **Wi-Fi**: networks saved in one system can be used in the other, without typing the passwords again.
@@ -10,7 +12,43 @@ Fixes what breaks when Windows and Linux share a PC (dual boot). Two apps, one p
 - **Fast Startup**: detect Windows Fast Startup (which leaves the Windows disk locked and out of date for Linux) and turn it off.
 - **Boot order**: put Linux back first when a Windows update moves Windows first, and keep it there.
 
-**Status: prototype (0.4.0).** Tested on one real dual-boot PC (see [Tested on](#tested-on)). Not yet tested on many machines.
+No network access, no telemetry, nothing changes without your confirmation.
+
+<p align="center">
+  <img src="docs/screenshots/linux-bluetooth.png" width="49%" alt="DualPair for Linux, Bluetooth tab">
+  <img src="docs/screenshots/windows-bluetooth.png" width="49%" alt="DualPair for Windows, Bluetooth tab">
+</p>
+<p align="center">
+  <img src="docs/screenshots/linux-wifi.png" width="32%" alt="Wi-Fi tab">
+  <img src="docs/screenshots/linux-clock.png" width="32%" alt="Clock tab">
+  <img src="docs/screenshots/linux-boot.png" width="32%" alt="Startup tab">
+</p>
+<p align="center"><sub>Screenshots on invented demo data (<code>tools/screenshots/</code>).</sub></p>
+
+> **Status: beta (0.4.1).** Tested on one real dual-boot PC so far (see [Tested on](#tested-on)). **Testers wanted:** if you try it, please [tell how it went](https://github.com/Diego230/dualPair/issues/new/choose), whether it worked or not, with your hardware.
+
+## Download and install
+
+From the [latest release](https://github.com/Diego230/dualPair/releases):
+
+- **Linux** (Ubuntu 22.04+, Debian 12+ and derivatives): `dualpair_<version>_all.deb`, then
+  `sudo apt install ./dualpair_<version>_all.deb`. Open **DualPair** from the applications menu.
+- **Windows** 10 and 11: `DualPair-Setup-<version>.exe`. The installer is **not signed yet** (signing is in progress, see [code signing](#code-signing-and-privacy)), so Windows shows *Windows protected your PC*: click *More info*, then *Run anyway*. With **Smart App Control** on, unsigned programs are blocked outright. Every installer is built from this repository by [GitHub Actions](https://github.com/Diego230/dualPair/actions), and the build log is public.
+
+The Linux app alone already covers most cases (Bluetooth from Windows to Linux, clock on the Linux side, boot order). Install the Windows app too for the rest: keys paired last on Linux, Wi-Fi sharing, clock and Fast Startup changes on the Windows side, BitLocker.
+
+## Quick start
+
+1. In **Windows**, pair your devices as usual, then shut Windows down completely (hold **Shift** while clicking *Shut down*).
+2. Start **Linux**, open **DualPair** and click **Scan**. Enter your password when asked.
+3. Go through the tabs: tick what you want and click the button. A blue dot on a tab means something there needs attention.
+4. If you sent something to Windows (keys, networks, a clock or Fast Startup change), DualPair for Windows handles it at the next Windows start and asks you before importing keys or networks.
+
+## Compared with other tools
+
+- [bt-dualboot](https://github.com/x2es/bt-dualboot) is a Linux command-line tool that copies the Linux Bluetooth keys into Windows by editing the Windows registry file from Linux.
+- [BlueVein](https://github.com/meowrch/BlueVein) runs a background service on each system that keeps the Bluetooth keys in sync automatically through the EFI partition.
+- **DualPair** covers Wi-Fi, the clock, Fast Startup and the boot order as well as Bluetooth, with a graphical app on each side. Linux never writes to the Windows disk (it is mounted read-only); each system changes only its own settings, and keys and networks are imported only after you confirm them.
 
 ## Why devices stop working
 
@@ -42,7 +80,7 @@ Each app lists the networks saved in its system (NetworkManager on Linux, Window
 
 ## DualPair for Windows
 
-Download `DualPair-Setup-<version>.exe` from the releases (or the `dualpair-windows` artifact of a CI run) and install it. It needs nothing else: it uses .NET Framework 4.8, already part of Windows 10 and 11. Until the installer is signed, Windows shows *Windows protected your PC*: click *More info*, then *Run anyway*. With **Smart App Control** on (Windows Security → App & browser control), unsigned programs are blocked outright: turn it off while trying DualPair, until signed builds are available.
+Install it from `DualPair-Setup-<version>.exe` (see [Download and install](#download-and-install)). It needs nothing else: it uses .NET Framework 4.8, already part of Windows 10 and 11. With **Smart App Control** on (Windows Security → App & browser control), unsigned programs are blocked outright: turn it off while trying DualPair, until signed builds are available.
 
 - **Bluetooth tab**: devices paired in Windows and whether Linux has the same key (compared by fingerprint, keys never leave their system for this); keys sent from Linux, to import after confirming; *Export for Linux*; *Undo last import*.
 - **Wi-Fi tab**: saved networks and whether Linux has them with the same password; networks sent from Linux, to import after confirming; *Send selected to Linux*.
@@ -150,12 +188,12 @@ Add `--json` for machine-readable output.
 
 ## Known limitations
 
-- **BitLocker**: if the Windows disk is encrypted, Linux cannot read it. DualPair says so; unlock the disk first. A Windows companion that exports the keys is planned.
+- **BitLocker**: if the Windows disk is encrypted, Linux cannot read it. Use *Export for Linux* in DualPair for Windows, then scan in DualPair for Linux.
 - **Fast Startup / hibernation**: if Windows was not fully shut down, the registry file can be out of date. DualPair detects this and refuses to sync (`--force` overrides it in the CLI).
 - **New classic devices** (paired only in Windows, e.g. headphones) are imported with a guessed key type and marked *experimental*. Devices already paired in Linux keep their key type and are reliable.
 - **Devices that change address on every pairing** (some BLE devices): they show up as a new device. Importing it works, and the old Linux entry stays as *Only in Linux*.
 - **IRK byte order**: copied as stored by Windows, like most existing tools do. It only matters for devices that use private addresses.
-- Linux only, BlueZ only. Packaged as a `.deb` for Ubuntu 22.04+ and Debian 12+ (needs libadwaita ≥ 1.1).
+- On Linux: BlueZ and NetworkManager only. Packaged as a `.deb` for Ubuntu 22.04+ and Debian 12+ (needs libadwaita ≥ 1.1); other distributions can run it from source.
 
 ## Building and testing
 
@@ -196,8 +234,8 @@ The `.deb` and the Windows installer can be downloaded from the run page (artifa
 To publish a release with the `.deb` and the Windows installer attached, create a release on GitHub (CI attaches the files when it is published), or push a version tag:
 
 ```
-git tag v0.4.0
-git push origin v0.4.0
+git tag v0.4.2
+git push origin v0.4.2
 ```
 
 ## Layout
@@ -213,12 +251,13 @@ git push origin v0.4.0
 | `dualpair/mailbox.py` | Exchange with DualPair for Windows through the EFI partition |
 | `dualpair/wifi.py` | NetworkManager Wi-Fi networks |
 | `dualpair/boot.py` | Firmware boot order (efibootmgr), GRUB check |
-| `dualpair/gui.py` | GTK4 / libadwaita window (Bluetooth and Clock tabs) |
+| `dualpair/gui.py` | GTK4 / libadwaita window (Bluetooth, Wi-Fi, Clock and Startup tabs) |
 | `windows/app/` | DualPair for Windows (C#, .NET Framework 4.8, Windows Forms) |
 | `windows/installer/` | Inno Setup installer |
 | `windows/tests/`, `tests/cross_check.py` | Windows tests and Python ↔ C# protocol cross-check |
 | `docs/protocol.md` | Exchange protocol between the two apps |
 | `dualpair/i18n.py` | English and Italian strings |
+| `tools/screenshots/` | Demo data and scripts for the README screenshots |
 
 ## Code signing and privacy
 

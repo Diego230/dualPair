@@ -1,0 +1,57 @@
+name: Test report
+description: Tried DualPair? Tell how it went on your PC, whether it worked or not.
+title: "Test report: "
+labels: ["test report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for trying DualPair! Reports from different PCs are the most useful help right now.
+        Please do **not** paste Bluetooth keys or Wi-Fi passwords (DualPair never shows them unless asked).
+  - type: input
+    id: version
+    attributes:
+      label: DualPair version
+      placeholder: "0.4.1"
+    validations:
+      required: true
+  - type: input
+    id: systems
+    attributes:
+      label: Systems
+      description: Linux distribution and version, Windows version
+      placeholder: "Ubuntu 24.04 + Windows 11 24H2"
+    validations:
+      required: true
+  - type: input
+    id: hardware
+    attributes:
+      label: PC and Bluetooth adapter
+      placeholder: "Lenovo ThinkPad T14 Gen 3, Intel AX211"
+  - type: checkboxes
+    id: apps
+    attributes:
+      label: Apps installed
+      options:
+        - label: DualPair for Linux
+        - label: DualPair for Windows
+  - type: textarea
+    id: results
+    attributes:
+      label: What you tried and what happened
+      description: Which features (Bluetooth, Wi-Fi, clock, Fast Startup, boot order), which devices, and the result.
+      placeholder: |
+        Bluetooth: Logitech MX Master 3 (LE) synced from Windows, works on both.
+        Clock: set Windows to UTC from the Linux app, worked after reboot.
+    validations:
+      required: true
+  - type: dropdown
+    id: overall
+    attributes:
+      label: Overall
+      options:
+        - Everything I tried worked
+        - Some things worked
+        - Nothing worked
+    validations:
+      required: true
