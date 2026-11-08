@@ -6,6 +6,8 @@ on:
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+  release:
+    types: [published]   # a release created on GitHub (or via the API) gets the .deb and the installer attached
 
 permissions:
   contents: read
@@ -194,7 +196,7 @@ jobs:
 
   release:
     name: Release
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
     needs: [test, windows]
     runs-on: ubuntu-24.04
     permissions:
@@ -208,7 +210,13 @@ jobs:
         with:
           name: dualpair-windows
           path: dist
-      - name: Create GitHub release with the .deb and the Windows installer
+      - name: Attach the .deb and the Windows installer to the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" dist/*.deb dist/*.exe --repo "${GITHUB_REPOSITORY}" --title "DualPair ${GITHUB_REF_NAME}" --generate-notes
+          TAG: ${{ github.event.release.tag_name || github.ref_name }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/*.deb dist/*.exe --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" dist/*.deb dist/*.exe --repo "$GITHUB_REPOSITORY" --title "DualPair $TAG" --generate-notes
+          fi
