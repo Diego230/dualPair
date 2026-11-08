@@ -84,7 +84,7 @@ def open_mailbox(override: str | None = None, create: bool = False, disabled: bo
 
     An ESP that is not mounted is mounted for the duration, readable by root only.
     disabled: yield None without looking (tests with fake BlueZ folders never touch the real ESP)."""
-    if disabled and not override:
+    if (disabled or os.geteuid() != 0) and not override:   # only root can mount and write the ESP
         yield None
         return
     if override:
@@ -116,7 +116,10 @@ def open_mailbox(override: str | None = None, create: bool = False, disabled: bo
             if chosen is None and create:
                 chosen = os.path.join(mnt, *FOLDER)
         if chosen and create:
-            os.makedirs(chosen, mode=0o700, exist_ok=True)
+            try:
+                os.makedirs(chosen, mode=0o700, exist_ok=True)
+            except OSError:
+                chosen = None
         yield chosen if chosen and os.path.isdir(chosen) else None
     finally:
         for m in temp_mounts:

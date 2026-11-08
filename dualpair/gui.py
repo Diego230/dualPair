@@ -39,7 +39,7 @@ def helper_command(write: bool = False) -> list[str]:
 
 
 def is_write(args) -> bool:
-    return args[0] in ("sync", "restore") or "--set" in args
+    return args[0] in ("sync", "restore", "send-to-windows") or "--set" in args or "--cancel" in args
 
 
 def run_helper(*args) -> dict:
@@ -219,27 +219,39 @@ class Window(Adw.ApplicationWindow):
     def build_bluetooth(self, res):
         clear(self.bt_box)
         self.checks = {}
+        self.send_checks = {}
         self.blocked = res["windows"].get("hive_dirty", False)  # the helper would refuse to sync
+        self.windows_app = res.get("windows_app")
         devices = res["devices"]
-        todo = [d for d in devices if d["status"] in ("needs_sync", "windows_only")]
+        # paired last on Linux: the device now holds Linux's key, so copying Windows' key would break it
+        to_windows = [d for d in devices if d["status"] == "needs_sync" and d.get("newer") == "linux"]
+        todo = [d for d in devices if d["status"] in ("needs_sync", "windows_only") and d not in to_windows]
         ok = [d for d in devices if d["status"] == "in_sync"]
         lin = [d for d in devices if d["status"] == "linux_only"]
-        self.bt_page.set_needs_attention(bool(todo))
+        self.bt_page.set_needs_attention(bool(todo or to_windows))
 
         content = page_box()
+        if res.get("source_kind") == "export":
+            content.append(card(t("gui.source.export"), "dialog-information-symbolic", "accent"))
         for note in res.get("notes", []):
             content.append(card(t("note." + note["code"], **note)))
-        if not todo and devices:
+        for m in res.get("pending_to_windows", []):
+            if m["type"] == "keys":
+                content.append(self._pending_card(t("gui.pending.keys", devices=", ".join(m.get("devices", []))), m["id"]))
+        if not todo and not to_windows and devices:
             page = Adw.StatusPage(icon_name="object-select-symbolic", title=t("gui.all_ok.title"),
                                   description=t("gui.all_ok.desc"))
             page.add_css_class("compact")
             content.append(page)
-        elif todo:
+        if todo:
             content.append(self._group(t("gui.group.todo"), t("gui.group.todo.desc"), todo, "todo"))
+        if to_windows:
+            content.append(self._send_group(to_windows))
         if ok:
             content.append(self._group(t("gui.group.ok"), None, ok, "ok"))
         if lin:
             content.append(self._group(t("gui.group.linux"), None, lin, "linux"))
+        content.append(self._windows_app_line())
         self.bt_box.append(scrolled(content))
 
         if todo:
@@ -248,6 +260,54 @@ class Window(Adw.ApplicationWindow):
             bar.append(self.sync_btn)
             self.bt_box.append(bar)
             self._update_sync_button()
+
+    def _windows_app_line(self):
+        w = self.windows_app
+        text = t("gui.winapp.seen", version=w.get("version") or "?", written=w.get("written") or "?") if w \
+            else t("gui.winapp.none")
+        label = Gtk.Label(label=text, wrap=True, xalign=0)
+        label.add_css_class("dim-label")
+        label.add_css_class("caption")
+        return label
+
+    def _pending_card(self, text, mid):
+        box = card(text, "mail-send-symbolic", "accent")
+        btn = Gtk.Button(label=t("gui.pending.cancel"), valign=Gtk.Align.CENTER, margin_end=12)
+        btn.connect("clicked", lambda *_: self.call(t("gui.syncing"), ["pending", "--cancel", mid],
+                                                     self.after_change(lambda r: t("gui.pending.cancelled"))))
+        box.append(btn)
+        return box
+
+    def _send_group(self, devices):
+        g = Adw.PreferencesGroup(title=esc(t("gui.group.to_windows")), description=esc(t("gui.group.to_windows.desc")))
+        for d in devices:
+            row = Adw.ActionRow(title=esc(d.get("name") or d["address"]),
+                                subtitle=esc(f"{d['address']} · {t('kind.' + d['kind'])}\n{t('newer.linux')}"))
+            check = Gtk.CheckButton(active=bool(self.windows_app), valign=Gtk.Align.CENTER,
+                                    sensitive=bool(self.windows_app))
+            row.add_prefix(check)
+            row.set_activatable_widget(check)
+            self.send_checks[d["address"]] = check
+            g.add(row)
+        if self.windows_app:
+            btn = Gtk.Button(label=t("gui.send"), halign=Gtk.Align.START, margin_top=10)
+            btn.connect("clicked", lambda *_: self.send_to_windows())
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+            box.append(g)
+            box.append(btn)
+            return box
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        box.append(g)
+        hint = Gtk.Label(label=t("gui.send.need_app"), wrap=True, xalign=0)
+        hint.add_css_class("dim-label")
+        box.append(hint)
+        return box
+
+    def send_to_windows(self):
+        addrs = [a for a, c in self.send_checks.items() if c.get_active()]
+        if addrs:
+            self.call(t("gui.syncing"), ["send-to-windows", *addrs],
+                      self.after_change(lambda r: t("gui.sent", n=len(r.get("sent", [])))))
 
     def _group(self, title, desc, devices, kind):
         g = Adw.PreferencesGroup(title=esc(title))
@@ -314,16 +374,28 @@ class Window(Adw.ApplicationWindow):
                             "object-select-symbolic" if ok else "dialog-warning-symbolic",
                             "success" if ok else "warning"))
 
-        if state == "conflict":
+        pending = next((m for m in res.get("pending_to_windows", []) if m["type"] == "set_clock"), None)
+        if pending:
+            content.append(self._pending_card(
+                t("gui.clock.pending_utc" if pending.get("windows_utc") else "gui.clock.pending_local"), pending["id"]))
+        if state == "conflict" and not pending:
             fixes = Adw.PreferencesGroup(title=esc(t("gui.clock.fixes")))
-            fixes.add(self._windows_fix_row(t("gui.clock.fix_win.title"), t("gui.clock.fix_win.desc"), c))
+            if c.get("windows_app"):
+                row = Adw.ActionRow(title=esc(t("gui.clock.fix_win.title")), subtitle=esc(t("gui.clock.fix_win.next_boot")))
+                btn = Gtk.Button(label=t("gui.clock.apply"), valign=Gtk.Align.CENTER)
+                btn.add_css_class("suggested-action")
+                btn.connect("clicked", lambda *_: self.set_linux_clock("windows-utc"))
+                row.add_suffix(btn)
+                fixes.add(row)
+            fixes.add(self._windows_fix_row(t("gui.clock.fix_win.manual") if c.get("windows_app")
+                                            else t("gui.clock.fix_win.title"), t("gui.clock.fix_win.desc"), c))
             fixes.add(self._apply_row(t("gui.clock.fix_linux.title"), t("gui.clock.fix_linux.desc"), "linux-local"))
             content.append(fixes)
-        elif state == "conflict_reverse":
+        elif state == "conflict_reverse" and not pending:
             fixes = Adw.PreferencesGroup(title=esc(t("gui.clock.fixes")))
             fixes.add(self._apply_row(t("gui.clock.linux_utc.title"), t("gui.clock.linux_utc.desc"), "linux-utc"))
             content.append(fixes)
-        elif state == "ok_local":
+        elif state == "ok_local" and not pending:
             more = Adw.PreferencesGroup()
             more.add(self._windows_fix_row(t("gui.clock.to_utc.title"), t("gui.clock.to_utc.desc"), c))
             content.append(more)

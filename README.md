@@ -2,31 +2,45 @@
 
 [![CI](https://github.com/Diego230/dualPair/actions/workflows/ci.yml/badge.svg)](https://github.com/Diego230/dualPair/actions/workflows/ci.yml)
 
-Fixes what breaks when Windows and Linux share a PC (dual boot). Two apps, one per system: each works alone for simple fixes.
+Fixes what breaks when Windows and Linux share a PC (dual boot). Two apps, one per system: **DualPair for Linux** and **DualPair for Windows**. Each works alone for simple fixes; together they handle the rest, exchanging data through the EFI partition both systems can read.
 
 - **Bluetooth**: use the same devices in both systems without pairing them again every time you switch.
 - **Clock**: stop the time being wrong in Windows after using Linux (and the other way round).
 
-**Status: prototype (0.2.0).** Tested on one real dual-boot PC (see [Tested on](#tested-on)). Not yet tested on many machines.
+**Status: prototype (0.3.0).** Tested on one real dual-boot PC (see [Tested on](#tested-on)). Not yet tested on many machines.
 
 ## Why devices stop working
 
 When you pair a device, the computer and the device agree on a secret key. Windows and Linux each create their own key for the same Bluetooth adapter, but the device only remembers the last one. So whichever system paired last works, and the other one is rejected.
 
-DualPair fixes this by copying Windows' keys into Linux. Both systems then use the same key.
+DualPair makes both systems use the same key:
+
+- **Paired last in Windows** → DualPair for Linux copies Windows' key into Linux (alone: it reads the Windows disk).
+- **Paired last in Linux** → DualPair for Linux sends the key to DualPair for Windows, which imports it after you confirm (both apps).
+- **Windows disk encrypted with BitLocker** → *Export for Linux* in DualPair for Windows, then DualPair for Linux imports the keys (both apps).
 
 ## The clock problem
 
 The PC has one hardware clock (RTC), shared by both systems. Linux reads it as UTC, Windows as local time, so after switching the time is off by the time zone offset (1-2 hours in Italy). DualPair shows how each system reads it (**Clock** tab) and offers both fixes:
 
-- **Windows in UTC (recommended).** Done once in Windows: registry value `RealTimeIsUniversal=1`. Use **DualPair for Windows** (*Use UTC*), or the `reg add` command the Linux app shows with a copy button.
+- **Windows in UTC (recommended).** Registry value `RealTimeIsUniversal=1`. With both apps: click *Apply* in the Linux app and DualPair for Windows applies it at the next Windows start. Otherwise *Use UTC* in DualPair for Windows, or the `reg add` command the Linux app shows with a copy button.
 - **Linux in local time.** One click in the Linux app (`timedatectl set-local-rtc 1`). systemd does not recommend it: the time can be wrong for a while after daylight-saving changes.
 
 If you later put Windows in UTC after having set Linux to local time, the app notices and offers to put Linux back to UTC.
 
 ## DualPair for Windows
 
-The `windows/` folder (or `dualpair-windows-<version>.zip` from the releases) holds a small Windows app: double-click `DualPair.cmd`, accept the administrator prompt. For now it handles the clock (*Use UTC*, *Back to local time*, *Sync the time now*). It also works from the command line: `DualPair.ps1 -Status`, `-SetUtc`, `-SetLocal`, `-Resync`, `-Json`.
+Download `DualPair-Setup-<version>.exe` from the releases (or the `dualpair-windows` artifact of a CI run) and install it. It needs nothing else: it uses .NET Framework 4.8, already part of Windows 10 and 11. Until the installer is signed, Windows shows *Windows protected your PC*: click *More info*, then *Run anyway*.
+
+- **Bluetooth tab**: devices paired in Windows and whether Linux has the same key (compared by fingerprint, keys never leave their system for this); keys sent from Linux, to import after confirming; *Export for Linux*; *Undo last import*.
+- **Clock tab**: how Windows and Linux read the hardware clock; *Use UTC*, *Back to local time*, *Sync the time now*.
+- At logon, a small notice when Linux sent keys or changed the clock.
+
+How it is built: the window runs as administrator; the Bluetooth keys are readable only by SYSTEM, so a scheduled task (`DualPair\Agent`, SYSTEM) does that work. It runs at every Windows start (to apply clock requests from Linux and publish the status) and when the window asks. The window talks to it through `%ProgramData%\DualPair`, which only SYSTEM and administrators can write. Uninstalling removes the task and that folder.
+
+## Working together
+
+The two apps exchange small JSON files in `EFI/DualPair/` on the EFI System Partition: a status file each (no keys: versions, clock setting, key fingerprints) and messages (`keys`, `set_clock`) that expire after 7 days and are deleted once handled. Keys are imported only after the user confirms them in the receiving app, and Windows only updates devices already paired in Windows. Details: [docs/protocol.md](docs/protocol.md).
 
 ## Tested on
 
@@ -47,7 +61,7 @@ Windows was found and read automatically. After syncing, audio devices may need 
 3. Start **Linux**, open **DualPair** and click **Scan**. Enter your password when asked.
 4. Check the devices you want and click **Sync**. Move or use the devices to reconnect.
 
-If you later pair a device again (on either system), pair it in Windows and run DualPair again.
+If you later pair a device again in Windows, run DualPair again. If you pair it again in Linux, DualPair shows it under *Paired last on Linux*: with DualPair for Windows installed, click *Send to Windows*.
 
 To undo the last sync, open the menu and choose **Undo last sync**.
 
@@ -78,6 +92,7 @@ Device states:
 - Windows is mounted read-only (`ro,nosuid,nodev,noexec`) and never modified. The registry file is parsed by a pure-Python, read-only parser: a malformed file can make it fail, not run code.
 - Two helpers, two polkit actions. `dualpair-helper-read` (scan, list backups) can only read and never prints keys; the password is remembered for a few minutes. `dualpair-helper` (sync, restore) asks for the password every time.
 - Started through `pkexec`, the helpers refuse every option that changes paths (`--win`, `--bluez-dir`, `--state-dir`) and `--show-keys`. Otherwise a program running as your user could steer them to read, write or delete files as root.
+- The EFI partition is writable only by root and administrators, who can already read their own system's keys. Through it, each system can only ask the other two things (update keys of devices already paired there, set the clock standard); messages are validated, expire, and keys need the user's confirmation. The status files carry fingerprints, not keys.
 - Restore only accepts backups whose names, paths and target folder are exactly what DualPair writes: no `..`, no symlinks, no other folders.
 - `--dry-run` hides keys (`Key=<hidden>`). `--show-keys` works only for root through `sudo`, never through `pkexec`.
 - Device names from Windows are stripped of control characters, so a name cannot add lines to BlueZ files.
@@ -97,7 +112,9 @@ sudo dualpair-cli backups
 sudo dualpair-cli restore              # undo the last sync
 sudo dualpair-cli --win /path/to/SYSTEM scan   # use a specific hive file or Windows folder
 sudo dualpair-cli clock                # how Linux and Windows read the hardware clock
-sudo dualpair-cli clock --set linux-local   # or linux-utc
+sudo dualpair-cli clock --set linux-local   # or linux-utc; windows-utc/windows-local: ask DualPair for Windows
+sudo dualpair-cli send-to-windows A4:BF:C6:D0:E5:FF   # keys of a device paired last on Linux
+sudo dualpair-cli pending [--cancel ID]  # what is waiting for Windows
 ```
 
 Add `--json` for machine-readable output.
@@ -115,10 +132,21 @@ Add `--json` for machine-readable output.
 
 ```
 packaging/build-deb.sh                     # -> dist/dualpair_<version>_all.deb
-packaging/build-windows-zip.sh             # -> dist/dualpair-windows-<version>.zip
 python3 -m unittest discover -s tests -t .
 python3.12 tests/make_fixtures.py          # rebuild test hives (needs python3-hivex)
 ```
+
+DualPair for Windows (on Windows, with the .NET SDK; the installer needs Inno Setup 6.3+):
+
+```
+dotnet build windows/app/DualPair.csproj -c Release
+dotnet build windows/tests/Tests.csproj -c Release
+windows\tests\bin\Release\net48\DualPair.Tests.exe tests\protocol_vectors.json   # as administrator
+iscc windows\installer\DualPair.iss                                            # -> dist\DualPair-Setup-<version>.exe
+```
+
+On Linux, Mono can compile and run the Windows tests (its registry is emulated):
+`mcs -out:Tests.exe -main:DualPair.Tests.Tests -r:System.Windows.Forms -r:System.Drawing -r:System.Web.Extensions -r:System.ServiceProcess windows/app/*.cs windows/tests/Tests.cs && mono Tests.exe tests/protocol_vectors.json`
 
 To try the window on fake data without root:
 
@@ -129,13 +157,18 @@ python3 -c "from dualpair.gui import main; main()"
 
 ## Continuous integration
 
-On every push and pull request, GitHub Actions runs the tests on Ubuntu 22.04 and 24.04, builds the `.deb`, installs it and runs a quick check on the installed package. A Windows job runs DualPair for Windows on a real Windows machine (status, *Use UTC*, back to local time). The `.deb` and the Windows zip can be downloaded from the run page (artifacts `dualpair-deb` and `dualpair-windows`).
+On every push and pull request, GitHub Actions:
 
-To publish a release with the `.deb` and the Windows zip attached, push a version tag:
+- runs the Python tests on Ubuntu 22.04 and 24.04, builds the `.deb`, installs it and checks the installed package;
+- on Windows, builds DualPair for Windows, runs its tests (test registry path, never the real keys), cross-checks the protocol with the Python side in both directions, builds the installer, installs it, has the SYSTEM task answer a request, and uninstalls it.
+
+The `.deb` and the Windows installer can be downloaded from the run page (artifacts `dualpair-deb` and `dualpair-windows`).
+
+To publish a release with the `.deb` and the Windows installer attached, push a version tag:
 
 ```
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.3.0
+git push origin v0.3.0
 ```
 
 ## Layout
@@ -148,8 +181,12 @@ git push origin v0.2.0
 | `dualpair/sync.py` | Compares, syncs, backs up, restores |
 | `dualpair/cli.py` | Command line and privileged helper (`--json`) |
 | `dualpair/clock.py` | Hardware clock check and Linux-side fix |
+| `dualpair/mailbox.py` | Exchange with DualPair for Windows through the EFI partition |
 | `dualpair/gui.py` | GTK4 / libadwaita window (Bluetooth and Clock tabs) |
-| `windows/` | DualPair for Windows (PowerShell + Windows Forms) |
+| `windows/app/` | DualPair for Windows (C#, .NET Framework 4.8, Windows Forms) |
+| `windows/installer/` | Inno Setup installer |
+| `windows/tests/`, `tests/cross_check.py` | Windows tests and Python ↔ C# protocol cross-check |
+| `docs/protocol.md` | Exchange protocol between the two apps |
 | `dualpair/i18n.py` | English and Italian strings |
 
 License: not chosen yet.
