@@ -151,13 +151,22 @@ jobs:
           $p = Start-Process $exe -PassThru -ArgumentList '--mailbox-dir', "`"$mb`"", '--registry-params', 'SOFTWARE\DualPairTest\BTHPORT\Parameters', '--state-dir', "`"$env:RUNNER_TEMP\shotstate`"", '--clock-key', 'SOFTWARE\DualPairTest\TZ'
           Start-Sleep -Seconds 10
           Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class W { [StructLayout(LayoutKind.Sequential)] public struct R { public int L, T, Ri, B; } [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out R r); }'
           function Shot($name) {
-            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            $p.Refresh()
+            $r = New-Object W+R
+            [W]::GetWindowRect($p.MainWindowHandle, [ref]$r) | Out-Null
+            $w = [Math]::Max(200, $r.Ri - $r.L); $h = [Math]::Max(200, $r.B - $r.T)
+            $bmp = New-Object System.Drawing.Bitmap $w, $h
             $g = [System.Drawing.Graphics]::FromImage($bmp)
-            $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+            $g.CopyFromScreen($r.L, $r.T, 0, 0, (New-Object System.Drawing.Size $w, $h))
             New-Item -ItemType Directory -Force screenshots | Out-Null
             $bmp.Save("screenshots/$name.png", [System.Drawing.Imaging.ImageFormat]::Png)
+            # also in the log, so it can be read without downloading artifacts
+            $b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes("screenshots/$name.png"))
+            "SHOT-BEGIN $name"
+            for ($i = 0; $i -lt $b64.Length; $i += 4000) { "SHOT " + $b64.Substring($i, [Math]::Min(4000, $b64.Length - $i)) }
+            "SHOT-END $name"
           }
           $ws = New-Object -ComObject WScript.Shell
           $ws.AppActivate($p.Id) | Out-Null
