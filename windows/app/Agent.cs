@@ -249,21 +249,32 @@ namespace DualPair
             return o == fp ? "same" : "different";
         }
 
+        /// <summary>Run one part of the status; if it fails, the others still run and the window shows why.</summary>
+        static T Safe<T>(Func<T> f, T fallback, string section, Dictionary<string, object> errors)
+        {
+            try { return f(); }
+            catch (Exception e) { errors[section] = e.GetType().Name + ": " + e.Message; return fallback; }
+        }
+
         void WriteStatus(Mailbox mb, Dictionary<string, object> notices)
         {
-            var devices = bt.Devices();
-            var nets = WifiNetworks();
-            var boot = Boot();
+            var errors = new Dictionary<string, object>();
+            var devices = Safe(() => bt.Devices(), new List<Device>(), "bluetooth", errors);
+            var nets = Safe(() => WifiNetworks(), null, "wifi", errors);
+            if (nets == null && !errors.ContainsKey("wifi") && Wifi.LastError != null && WifiSource == null) errors["wifi"] = Wifi.LastError;
+            var boot = Safe(() => Boot(), null, "boot", errors);
             string fixedAt = null;
             try { fixedAt = Protocol.ReadJsonFile(Path.Combine(opt.StateDir, "boot.json"))["fixed_at"] as string; } catch (Exception) { }
-            var fast = FastStartup.Enabled();
+            var fast = Safe(() => FastStartup.Enabled(), null, "power", errors);
+            var rtcUtc = Safe(() => Clock.RtcUtc(), false, "clock", errors);
+            var btAvailable = Safe(() => bt.Available(), false, "bluetooth", errors);
 
             var shared = new Dictionary<string, object> {
                 { "dualpair", Protocol.Version }, { "system", "windows" }, { "version", Program.Version },
                 { "written", Protocol.Iso(DateTime.UtcNow) },
-                { "clock", new Dictionary<string, object> { { "rtc_utc", Clock.RtcUtc() }, { "timezone", Clock.TimeZoneName() } } },
+                { "clock", new Dictionary<string, object> { { "rtc_utc", rtcUtc }, { "timezone", Clock.TimeZoneName() } } },
                 { "bluetooth", new Dictionary<string, object> {
-                    { "available", bt.Available() },
+                    { "available", btAvailable },
                     { "devices", devices.Select(d => (object)new Dictionary<string, object> {
                         { "adapter", d.Adapter }, { "address", d.Address }, { "name", d.Name }, { "kind", d.Kind },
                         { "fingerprint", d.Fingerprint() },
@@ -277,11 +288,11 @@ namespace DualPair
                     { "first_loader", boot != null && boot.First != null ? boot.First.Path : null }, { "fixed_at", fixedAt } } } };
             try { mb.WriteStatus(shared); } catch (Exception) { }
 
-            var linux = mb.ReadStatus("linux");
+            var linux = Safe(() => mb.ReadStatus("linux"), null, "esp", errors);
             var linuxBt = Fingerprints(linux, "bluetooth", "devices", "address");
             var linuxWifi = Fingerprints(linux, "wifi", "networks", "ssid");
             var linuxHasWifi = linux != null && linux.ContainsKey("wifi");
-            var messages = mb.List("windows", false);
+            var messages = Safe(() => mb.List("windows", false), new List<Message>(), "esp", errors);
             var pending = messages.Where(m => m.Type == "keys").Select(m => (object)new Dictionary<string, object> {
                 { "id", m.Id }, { "created", Protocol.Iso(m.Created) },
                 { "devices", m.Devices.Select(d => (object)new Dictionary<string, object> {
@@ -300,6 +311,8 @@ namespace DualPair
 
             var local = new Dictionary<string, object>(shared) {
                 { "esp", mb.Folder != null },
+                { "errors", errors },
+                { "wifi_source", WifiSource == null ? Wifi.LastSource : "test" },
                 { "linux", linux },
                 { "pending", pending },
                 { "pending_wifi", pendingWifi },

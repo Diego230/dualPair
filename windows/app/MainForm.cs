@@ -259,14 +259,18 @@ namespace DualPair
             });
         }
 
+        string agentError;
+
         void RefreshAll()
         {
             Busy(() =>
             {
-                Install.Ask(opt, new Dictionary<string, object> { { "op", "status" } });
+                var r = Install.Ask(opt, new Dictionary<string, object> { { "op", "status" } });
+                object err;
+                agentError = r.TryGetValue("error", out err) ? err as string : null;
                 try { return Protocol.ReadJsonFile(Path.Combine(opt.StateDir, "status.json")); }
                 catch (Exception) { return null; }
-            }, s => { status = s; Fill(); });
+            }, s => { status = s; Fill(); if (agentError != null) busy.Text = Strings.T("agent.failed", agentError); });
         }
 
         // ------------------------------------------------------------------ showing the status
@@ -359,7 +363,17 @@ namespace DualPair
                 if (st == "windows_only" || st == "different") item.ForeColor = Color.DarkOrange;
                 wifiList.Items.Add(item);
             }
-            if (wifiList.Items.Count == 0) wifiList.Items.Add(new ListViewItem(Strings.T("wifi.none")) { ForeColor = Color.DimGray });
+            if (wifiList.Items.Count == 0)
+            {
+                var available = Get(status, "wifi", "available");
+                var err = Get(status, "errors", "wifi") as string;
+                string text;
+                if (err == "wlan_service") text = Strings.T("wifi.err.service");
+                else if (err == "no_adapter") text = Strings.T("wifi.err.adapter");
+                else if (err != null) text = Strings.T("wifi.err.other", err);
+                else text = Strings.T(available is bool && (bool)available ? "wifi.none_saved" : "wifi.none");
+                wifiList.Items.Add(new ListViewItem(text) { ForeColor = err != null ? Color.DarkOrange : Color.DimGray });
+            }
 
             var pending = (Get(status, "pending_wifi") as object[]) ?? new object[0];
             wifiPendingBox.Visible = pending.Length > 0;

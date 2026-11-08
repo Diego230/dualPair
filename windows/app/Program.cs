@@ -13,6 +13,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Windows.Forms;
 
@@ -20,12 +21,14 @@ namespace DualPair
 {
     public static class Program
     {
-        public const string Version = "0.4.0";
+        public const string Version = "0.4.1";
 
         public static bool IsAdmin()
         {
             return new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator);
         }
+
+        [DllImport("kernel32.dll")] static extern bool AttachConsole(int processId);
 
         static string Arg(List<string> args, string name)
         {
@@ -54,6 +57,9 @@ namespace DualPair
 
                 if (args.Contains("--status") || args.Contains("--set-clock") || args.Contains("--resync") || args.Contains("--run"))
                 {
+                    // a windowed program has no console: use the terminal it was started from, if any
+                    try { if (AttachConsole(-1)) { Console.SetOut(new System.IO.StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true }); } }
+                    catch (Exception) { }
                     if (!IsAdmin()) { Console.Error.WriteLine("Run as administrator."); return 1; }
                     var result = new Dictionary<string, object>();
                     var clock = Arg(args, "--set-clock");

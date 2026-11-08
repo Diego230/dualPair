@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml;
@@ -146,22 +147,132 @@ namespace DualPair
     {
         const string Ns = "http://www.microsoft.com/networking/WLAN/profile/v1";
 
+        public static string LastError;   // why the last Export found nothing (shown in the window)
+
+        // ---- native WLAN API: profiles come back as XML in memory, nothing written to disk
+        [DllImport("wlanapi.dll")] static extern uint WlanOpenHandle(uint clientVersion, IntPtr reserved, out uint negotiated, out IntPtr handle);
+        [DllImport("wlanapi.dll")] static extern uint WlanCloseHandle(IntPtr handle, IntPtr reserved);
+        [DllImport("wlanapi.dll")] static extern uint WlanEnumInterfaces(IntPtr handle, IntPtr reserved, out IntPtr list);
+        [DllImport("wlanapi.dll")] static extern uint WlanGetProfileList(IntPtr handle, ref Guid iface, IntPtr reserved, out IntPtr list);
+        [DllImport("wlanapi.dll", CharSet = CharSet.Unicode)]
+        static extern uint WlanGetProfile(IntPtr handle, ref Guid iface, string name, IntPtr reserved, out IntPtr xml, ref uint flags, out uint access);
+        [DllImport("wlanapi.dll", CharSet = CharSet.Unicode)]
+        static extern uint WlanSetProfile(IntPtr handle, ref Guid iface, uint flags, string xml, string security, bool overwrite, IntPtr reserved, out uint reason);
+        [DllImport("wlanapi.dll")] static extern void WlanFreeMemory(IntPtr p);
+        const uint WLAN_PROFILE_GET_PLAINTEXT_KEY = 4;
+        const int InterfaceInfoSize = 16 + 512 + 4;   // GUID, WCHAR[256], WLAN_INTERFACE_STATE
+        const int ProfileInfoSize = 512 + 4;          // WCHAR[256], DWORD flags
+
+        static List<Guid> Interfaces(IntPtr h)
+        {
+            var result = new List<Guid>();
+            IntPtr list;
+            var rc = WlanEnumInterfaces(h, IntPtr.Zero, out list);
+            if (rc != 0) throw new InvalidOperationException("WlanEnumInterfaces: error " + rc);
+            try
+            {
+                var n = Marshal.ReadInt32(list);
+                for (int i = 0; i < n; i++)
+                {
+                    var bytes = new byte[16];
+                    Marshal.Copy(IntPtr.Add(list, 8 + i * InterfaceInfoSize), bytes, 0, 16);
+                    result.Add(new Guid(bytes));
+                }
+            }
+            finally { WlanFreeMemory(list); }
+            return result;
+        }
+
         /// <summary>Saved networks with their passwords (open, WPA/WPA2/WPA3-Personal only), or null
-        /// if Wi-Fi is not available. Uses `netsh wlan export profile key=clear` into a folder that
-        /// only SYSTEM and administrators can read, deleted right after.</summary>
+        /// if they cannot be read (LastError says why). Needs administrator or SYSTEM rights for the
+        /// passwords; uses the WLAN API, and netsh only if that is not available.</summary>
+        public static string LastSource;  // "api" or "netsh" (diagnostics)
+
         public static List<WifiNetwork> Export(string workDir)
+        {
+            // The WLAN API keeps passwords in memory only. It is not testable on the CI machines (no
+            // Wi-Fi there), so if it finds nothing, netsh (known to work) is tried as well.
+            var viaApi = ExportApi(workDir);
+            if (viaApi != null && viaApi.Count > 0) { LastSource = "api"; return viaApi; }
+            if (LastError == "wlan_service" || LastError == "no_adapter") { LastSource = "api"; return null; }
+            var apiError = LastError;
+            LastError = null;
+            var viaNetsh = ExportNetsh(workDir);
+            LastSource = "netsh";
+            if (viaNetsh == null && apiError != null) LastError = apiError + "; " + LastError;
+            return viaNetsh ?? viaApi;
+        }
+
+        static List<WifiNetwork> ExportApi(string workDir)
+        {
+            LastError = null;
+            IntPtr h = IntPtr.Zero;
+            try
+            {
+                uint version;
+                var rc = WlanOpenHandle(2, IntPtr.Zero, out version, out h);
+                if (rc == 1062) { LastError = "wlan_service"; return null; }        // WLAN AutoConfig not running: no Wi-Fi
+                if (rc != 0) throw new InvalidOperationException("WlanOpenHandle: error " + rc);
+                var result = new List<WifiNetwork>();
+                var ifaces = Interfaces(h);
+                if (ifaces.Count == 0) { LastError = "no_adapter"; return null; }
+                foreach (var g in ifaces)
+                {
+                    var iface = g;
+                    IntPtr plist;
+                    rc = WlanGetProfileList(h, ref iface, IntPtr.Zero, out plist);
+                    if (rc != 0) throw new InvalidOperationException("WlanGetProfileList: error " + rc);
+                    var names = new List<string>();
+                    try
+                    {
+                        var n = Marshal.ReadInt32(plist);
+                        for (int i = 0; i < n; i++) names.Add(Marshal.PtrToStringUni(IntPtr.Add(plist, 8 + i * ProfileInfoSize)));
+                    }
+                    finally { WlanFreeMemory(plist); }
+                    foreach (var name in names)
+                    {
+                        IntPtr xml;
+                        uint flags = WLAN_PROFILE_GET_PLAINTEXT_KEY, access;
+                        if (WlanGetProfile(h, ref iface, name, IntPtr.Zero, out xml, ref flags, out access) != 0) continue;
+                        string text;
+                        try { text = Marshal.PtrToStringUni(xml); } finally { WlanFreeMemory(xml); }
+                        var net = ParseProfile(text);
+                        if (net != null && !result.Any(x => x.Ssid == net.Ssid)) result.Add(net);
+                    }
+                }
+                return result;
+            }
+            catch (Exception e) when (e is DllNotFoundException || e is EntryPointNotFoundException)
+            {
+                LastError = "no WLAN API";
+                return null;
+            }
+            catch (Exception e)
+            {
+                LastError = e.Message;
+                return null;
+            }
+            finally { if (h != IntPtr.Zero) WlanCloseHandle(h, IntPtr.Zero); }
+        }
+
+        static List<WifiNetwork> ExportNetsh(string workDir)
         {
             var dir = Path.Combine(workDir, "wifi-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(dir);
             try
             {
                 string output;
-                if (Exec.Run("netsh.exe", "wlan export profile key=clear folder=\"" + dir + "\"", out output) != 0) return null;
+                var rc = Exec.Run("netsh.exe", "wlan export profile key=clear folder=\"" + dir + "\"", out output);
                 var result = new List<WifiNetwork>();
-                foreach (var f in Directory.GetFiles(dir, "*.xml"))
+                foreach (var f in Directory.GetFiles(dir, "*.xml"))   // use whatever was exported, even if netsh reported an error
                 {
                     var n = ParseProfile(File.ReadAllText(f));
                     if (n != null && !result.Any(x => x.Ssid == n.Ssid)) result.Add(n);
+                }
+                if (result.Count == 0 && rc != 0)
+                {
+                    LastError = "netsh: " + string.Join(" ", output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).Take(2));
+                    return null;
                 }
                 return result;
             }
@@ -239,28 +350,52 @@ namespace DualPair
             return sb.ToString();
         }
 
-        /// <summary>Add (or update) profiles for all users. Returns per-network results.</summary>
-        public static List<KeyValuePair<string, string>> Import(IEnumerable<WifiNetwork> nets, List<WifiNetwork> existing, string workDir)
+        static bool ImportNetsh(WifiNetwork n, string workDir)
         {
-            var results = new List<KeyValuePair<string, string>>();
             var dir = Path.Combine(workDir, "wifi-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(dir);
             try
             {
+                var file = Path.Combine(dir, "profile.xml");
+                File.WriteAllText(file, BuildProfile(n), new UTF8Encoding(false));
+                string output;
+                return Exec.Run("netsh.exe", "wlan add profile filename=\"" + file + "\" user=all", out output) == 0;
+            }
+            finally { try { Directory.Delete(dir, true); } catch (Exception) { } }
+        }
+
+        /// <summary>Add (or update) profiles for all users, with the WLAN API (nothing written to
+        /// disk). Returns per-network results.</summary>
+        public static List<KeyValuePair<string, string>> Import(IEnumerable<WifiNetwork> nets, List<WifiNetwork> existing, string workDir)
+        {
+            var results = new List<KeyValuePair<string, string>>();
+            IntPtr h = IntPtr.Zero;
+            try
+            {
+                uint version;
+                if (WlanOpenHandle(2, IntPtr.Zero, out version, out h) != 0) h = IntPtr.Zero;
+                var ifaces = h != IntPtr.Zero ? Interfaces(h) : new List<Guid>();
                 foreach (var n in nets)
                 {
                     var old = existing == null ? null : existing.FirstOrDefault(e => e.Ssid == n.Ssid);
                     if (old != null && old.Fingerprint() == n.Fingerprint() && old.Security == n.Security)
                     { results.Add(new KeyValuePair<string, string>(n.Ssid, "same")); continue; }
-                    var file = Path.Combine(dir, Guid.NewGuid().ToString("N") + ".xml");
-                    File.WriteAllText(file, BuildProfile(n), new UTF8Encoding(false));
-                    string output;
-                    var ok = Exec.Run("netsh.exe", "wlan add profile filename=\"" + file + "\" user=all", out output) == 0;
-                    File.Delete(file);
+                    var ok = false;
+                    foreach (var g in ifaces)
+                    {
+                        var iface = g;
+                        uint reason;
+                        ok |= WlanSetProfile(h, ref iface, 0, BuildProfile(n), null, true, IntPtr.Zero, out reason) == 0;   // 0 = all users
+                    }
+                    if (!ok) ok = ImportNetsh(n, workDir);   // same safety net as for reading
                     results.Add(new KeyValuePair<string, string>(n.Ssid, !ok ? "failed" : (old != null ? "updated" : "added")));
                 }
             }
-            finally { try { Directory.Delete(dir, true); } catch (Exception) { } }
+            catch (Exception)
+            {
+                for (int i = results.Count; i < nets.Count(); i++) results.Add(new KeyValuePair<string, string>(nets.ElementAt(i).Ssid, "failed"));
+            }
+            finally { if (h != IntPtr.Zero) WlanCloseHandle(h, IntPtr.Zero); }
             return results;
         }
     }
