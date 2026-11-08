@@ -121,6 +121,62 @@ jobs:
           $global:LASTEXITCODE = 0
           "install / task / uninstall ok"
 
+      - name: Screenshots of the window (test data)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $root = 'HKLM:\SOFTWARE\DualPairTest'
+          $keys = "$root\BTHPORT\Parameters\Keys\c41375c0e2e6"
+          New-Item -Path "$keys\fcc2073c8ad2" -Force | Out-Null
+          New-ItemProperty -Path $keys -Name 'a4bfc6d0e5ff' -PropertyType Binary -Value ([byte[]](1..16)) -Force | Out-Null
+          New-ItemProperty -Path $keys -Name '001b66b69ecf' -PropertyType Binary -Value ([byte[]](21..36)) -Force | Out-Null
+          New-ItemProperty -Path "$keys\fcc2073c8ad2" -Name 'LTK' -PropertyType Binary -Value ([byte[]](41..56)) -Force | Out-Null
+          New-ItemProperty -Path "$keys\fcc2073c8ad2" -Name 'EDIV' -PropertyType DWord -Value 1 -Force | Out-Null
+          New-ItemProperty -Path "$keys\fcc2073c8ad2" -Name 'ERand' -PropertyType QWord -Value 2 -Force | Out-Null
+          foreach ($d in @(@('a4bfc6d0e5ff','WH-1000XM4'), @('001b66b69ecf','JBL Go 3'), @('fcc2073c8ad2','TK-MS317 5.0'))) {
+            New-Item -Path "$root\BTHPORT\Parameters\Devices\$($d[0])" -Force | Out-Null
+            New-ItemProperty -Path "$root\BTHPORT\Parameters\Devices\$($d[0])" -Name Name -PropertyType Binary -Value ([Text.Encoding]::UTF8.GetBytes($d[1] + [char]0)) -Force | Out-Null
+          }
+          New-Item -Path "$root\TZ" -Force | Out-Null
+          $box = Join-Path $env:RUNNER_TEMP 'shotbox'
+          python tests/cross_check.py make $box
+          $mb = Join-Path $box 'EFI\DualPair'
+          $fp = python -c "from dualpair.mailbox import fingerprint; print(fingerprint('0102030405060708090A0B0C0D0E0F10',None,None,None))"
+          $now = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+          @{dualpair=1; system='linux'; version='0.3.0'; written=$now; clock=@{rtc_utc=$true; timezone='Europe/Rome'};
+            bluetooth=@{available=$true; devices=@(@{adapter='C4:13:75:C0:E2:E6'; address='A4:BF:C6:D0:E5:FF'; kind='classic'; fingerprint=$fp})}} |
+            ConvertTo-Json -Depth 6 | Set-Content (Join-Path $mb 'status-linux.json') -Encoding utf8NoBOM
+          $env:DUALPAIR_INPROC = '1'
+          $exe = (Resolve-Path windows/app/bin/Release/net48/DualPair.exe).Path
+          $p = Start-Process $exe -PassThru -ArgumentList '--mailbox-dir', "`"$mb`"", '--registry-params', 'SOFTWARE\DualPairTest\BTHPORT\Parameters', '--state-dir', "`"$env:RUNNER_TEMP\shotstate`"", '--clock-key', 'SOFTWARE\DualPairTest\TZ'
+          Start-Sleep -Seconds 10
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          function Shot($name) {
+            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            $g = [System.Drawing.Graphics]::FromImage($bmp)
+            $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+            New-Item -ItemType Directory -Force screenshots | Out-Null
+            $bmp.Save("screenshots/$name.png", [System.Drawing.Imaging.ImageFormat]::Png)
+          }
+          $ws = New-Object -ComObject WScript.Shell
+          $ws.AppActivate($p.Id) | Out-Null
+          Start-Sleep -Seconds 1
+          Shot 'windows-bluetooth'
+          $ws.SendKeys('^{TAB}')
+          Start-Sleep -Seconds 2
+          Shot 'windows-clock'
+          Stop-Process $p -Force
+          Remove-Item $root -Recurse -Force
+
+      - name: Upload screenshots
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-screenshots
+          path: screenshots/*.png
+
       - name: Upload the installer
         uses: actions/upload-artifact@v4
         with:
