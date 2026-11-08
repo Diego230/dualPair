@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Diego Buono
 """GTK4 / libadwaita interface. Runs as the normal user; all privileged work goes through
 the helpers (dualpair-cli --json) started with pkexec. Compatible with libadwaita >= 1.1.
 
@@ -632,7 +634,9 @@ class App(Adw.Application):
 
     def about(self, *_):
         Gtk.AboutDialog(transient_for=self.win, modal=True, program_name="DualPair", version=__version__,
-                        logo_icon_name=APP_ID, comments=t("gui.start.desc")).present()
+                        logo_icon_name=APP_ID, comments=t("gui.start.desc"),
+                        copyright="Copyright \u00a9 2026 Diego Buono", license_type=Gtk.License.GPL_3_0,
+                        website="https://github.com/Diego230/dualPair").present()
 
 
 def main():

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Diego Buono
 """Command line interface. The GUI runs this as root through pkexec, with --json."""
 from __future__ import annotations
 

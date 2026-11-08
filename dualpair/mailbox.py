@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Diego Buono
 """Exchange with DualPair for Windows through the EFI System Partition (see docs/protocol.md).
 
 Folder: <ESP>/EFI/DualPair/ with status-linux.json, status-windows.json, to-windows/, to-linux/.

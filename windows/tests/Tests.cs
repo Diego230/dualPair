@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Diego Buono
 // Tests for DualPair for Windows. Run as administrator on Windows (CI), or under Mono (emulated registry).
 // Uses a test registry path, a test mailbox folder and a test state folder: never the real ones.
 //   Tests.exe <path to tests/protocol_vectors.json> [<folder with a message written by Python>]

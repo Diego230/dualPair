@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Diego Buono
 """Cross-check the protocol between the Python (Linux) and C# (Windows) implementations.
 
   cross_check.py make DIR    write DIR/EFI/DualPair/to-windows/<id>.json the way DualPair for Linux does

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Diego Buono
 """Wi-Fi (NetworkManager), Windows Fast Startup and firmware boot order."""
 import io
 import json

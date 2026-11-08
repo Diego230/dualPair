@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Diego Buono
 // English and Italian strings, chosen from the Windows display language.
 using System.Collections.Generic;
 using System.Globalization;

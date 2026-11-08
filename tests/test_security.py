@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Diego Buono
 """Security properties: the pkexec helper cannot be steered to other paths, backups cannot be
 used to write or delete outside BlueZ's folder, keys are not printed, names cannot inject lines,
 old backups expire."""

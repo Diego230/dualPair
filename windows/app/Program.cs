@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Diego Buono
 // DualPair for Windows.
 //
 //   DualPair.exe                     the window (asks for administrator rights)

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Diego Buono
 // The window: Bluetooth and Clock tabs. Runs as administrator; anything that needs SYSTEM (the
 // Bluetooth keys) is asked of the agent task through Install.Ask.
 using System;

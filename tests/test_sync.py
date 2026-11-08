@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Diego Buono
 """End-to-end tests of scan / sync / restore against a fake Windows hive and a fake /var/lib/bluetooth."""
 import io
 import json

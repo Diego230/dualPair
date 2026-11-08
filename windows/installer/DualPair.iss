@@ -1,3 +1,5 @@
+; SPDX-License-Identifier: GPL-3.0-or-later
+; Copyright (C) 2026 Diego Buono
 ; Installer for DualPair for Windows (Inno Setup 6.3+). Built by CI:  iscc installer\DualPair.iss
 #define AppVersion "0.4.1"
 
@@ -21,6 +23,7 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 MinVersion=10.0
+LicenseFile=..\..\LICENSE
 
 [Languages]
 Name: "it"; MessagesFile: "compiler:Languages\Italian.isl"

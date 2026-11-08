@@ -220,4 +220,8 @@ git push origin v0.4.0
 | `docs/protocol.md` | Exchange protocol between the two apps |
 | `dualpair/i18n.py` | English and Italian strings |
 
-License: not chosen yet.
+## License
+
+Copyright © 2026 Diego Buono.
+
+DualPair is free software: you can redistribute it and/or modify it under the terms of the [GNU General Public License](LICENSE) as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. It is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; see the license for details.

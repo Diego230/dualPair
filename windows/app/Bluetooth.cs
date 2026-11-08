@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Diego Buono
 // Bluetooth pairing keys in the Windows registry (readable and writable only by SYSTEM):
 //   HKLM\SYSTEM\CurrentControlSet\Services\BTHPORT\Parameters\Keys\<adapter>\
 //       <device>    REG_BINARY 16 bytes  -> classic link key

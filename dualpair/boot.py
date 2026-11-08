@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Diego Buono
 """Firmware boot order (UEFI), read and changed with efibootmgr.
 
 Some Windows updates put "Windows Boot Manager" back first, so the PC starts Windows directly

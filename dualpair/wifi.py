@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Diego Buono
 """Saved Wi-Fi networks in NetworkManager (/etc/NetworkManager/system-connections/*.nmconnection).
 
 Only personal networks are shared: open, WPA/WPA2-Personal (wpa-psk), WPA3-Personal (sae).

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Diego Buono
 // At logon (shortcut in the common Startup folder, runs without administrator rights): tell the
 // user, once, what came from Linux or what DualPair did at startup. Reads pending.json only.
 using System;

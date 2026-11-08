@@ -1,4 +1,6 @@
 #!/usr/bin/python3.12
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Diego Buono
 """Build fake Windows SYSTEM hives for the tests, using libhivex (python3-hivex).
 
 Run with the system Python that has the hivex binding:  python3.12 tests/make_fixtures.py

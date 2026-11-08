@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Diego Buono
 """Minimal read-only parser for Windows registry hive files (regf format).
 
 Only what DualPair needs: walk keys by path, list subkeys and values, read value

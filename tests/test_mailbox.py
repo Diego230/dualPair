@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Diego Buono
 """Exchange with DualPair for Windows through the ESP folder (docs/protocol.md)."""
 import copy
 import datetime

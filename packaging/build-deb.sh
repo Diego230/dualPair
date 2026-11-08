@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Diego Buono
 # Build dist/dualpair_<version>_all.deb  (needs only dpkg-deb)
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -14,6 +16,7 @@ install -m 644 dualpair/*.py "$ROOT/usr/lib/dualpair/dualpair/"
 
 cat > "$ROOT/usr/lib/dualpair/dualpair-helper" <<'EOF'
 #!/usr/bin/python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Privileged helper: started by the DualPair window through pkexec, or by dualpair-cli.
 import sys
 sys.path.insert(0, "/usr/lib/dualpair")
@@ -46,6 +49,27 @@ install -m 644 data/io.github.dualpair.DualPair.desktop "$ROOT/usr/share/applica
 install -m 644 data/io.github.dualpair.DualPair.svg "$ROOT/usr/share/icons/hicolor/scalable/apps/"
 install -m 644 data/io.github.dualpair.policy "$ROOT/usr/share/polkit-1/actions/"
 install -m 644 README.md "$ROOT/usr/share/doc/dualpair/"
+cat > "$ROOT/usr/share/doc/dualpair/copyright" <<'EOF'
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: DualPair
+Source: https://github.com/Diego230/dualPair
+
+Files: *
+Copyright: 2026 Diego Buono
+License: GPL-3.0+
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+ .
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+ .
+ On Debian systems, the complete text of the GNU General Public License
+ version 3 can be found in "/usr/share/common-licenses/GPL-3".
+EOF
 
 SIZE=$(du -sk "$ROOT/usr" | cut -f1)
 cat > "$ROOT/DEBIAN/control" <<EOF
@@ -57,7 +81,7 @@ Architecture: all
 Installed-Size: $SIZE
 Depends: python3 (>= 3.10), python3-gi, gir1.2-gtk-4.0, gir1.2-adw-1, pkexec | policykit-1, bluez, util-linux
 Recommends: ntfs-3g
-Maintainer: DualPair <dualpair@localhost>
+Maintainer: Diego Buono <diegobuono1@gmail.com>
 Description: Use the same Bluetooth devices in Windows and Linux (dual boot)
  Copies Bluetooth pairing keys from the Windows installation on the same
  computer into BlueZ, so devices paired in Windows also work in Linux

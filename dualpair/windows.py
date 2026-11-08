@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Diego Buono
 """Read Bluetooth pairing keys from a Windows installation, without booting Windows.
 
 Windows keeps them in the SYSTEM registry hive:

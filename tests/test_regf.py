@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Diego Buono
 """Tests for the hive parser: a hivex-built hive plus a hand-built one with li/ri lists,
 big data and UTF-16 names (layouts real Windows hives use but hivex does not write)."""
 import os

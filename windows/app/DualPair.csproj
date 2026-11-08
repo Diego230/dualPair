@@ -14,7 +14,7 @@
     <Version>0.4.1</Version>
     <Product>DualPair</Product>
     <Description>DualPair for Windows: fixes what breaks when Windows and Linux share a PC</Description>
-    <Copyright>DualPair contributors</Copyright>
+    <Copyright>Copyright (C) 2026 Diego Buono. License: GPL-3.0-or-later</Copyright>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <Deterministic>true</Deterministic>
   </PropertyGroup>

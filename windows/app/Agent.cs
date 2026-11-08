@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Diego Buono
 // The privileged part. Runs as SYSTEM from the "DualPair\Agent" scheduled task: at every Windows
 // start, and on demand when the window asks for something only SYSTEM can do (Bluetooth keys,
 // Wi-Fi passwords).

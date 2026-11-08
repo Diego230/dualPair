@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Diego Buono
 // Setup steps run by the installer (--install / --uninstall): the SYSTEM scheduled task and the
 // protected %ProgramData%\DualPair folder. Also how the window asks the task for work.
 using System;

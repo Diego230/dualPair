@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Diego Buono
 // The DualPair folder on the EFI System Partition, shared with DualPair for Linux.
 using System;
 using System.Collections.Generic;

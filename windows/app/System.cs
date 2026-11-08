@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Diego Buono
 // Windows settings that matter for dual boot: Fast Startup, firmware boot order, Wi-Fi profiles.
 using System;
 using System.Collections.Generic;

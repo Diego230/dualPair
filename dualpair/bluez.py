@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Diego Buono
 """BlueZ pairing storage: /var/lib/bluetooth/<adapter>/<device>/info (GKeyFile/INI)."""
 from __future__ import annotations
 

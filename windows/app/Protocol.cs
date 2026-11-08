@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Diego Buono
 // Exchange protocol with DualPair for Linux (docs/protocol.md). Mirrors dualpair/mailbox.py.
 using System;
 using System.Collections.Generic;

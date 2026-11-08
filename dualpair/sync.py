@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Diego Buono
 """Compare Windows and Linux pairings and copy Windows keys into BlueZ."""
 from __future__ import annotations
 

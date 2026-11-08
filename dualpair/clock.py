@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Diego Buono
 """Dual-boot clock: both systems share one hardware clock (RTC).
 
 Linux normally keeps it in UTC, Windows in local time, so each one reads the other's
