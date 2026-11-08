@@ -1,3 +1,7 @@
 __pycache__/
 *.pyc
 dist/
+windows/app/bin/
+windows/app/obj/
+windows/tests/bin/
+windows/tests/obj/
