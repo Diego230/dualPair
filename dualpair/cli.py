@@ -6,7 +6,7 @@ import json
 import os
 import sys
 
-from . import __version__, bluez, sync
+from . import __version__, bluez, clock, sync
 from .errors import DualPairError
 from .i18n import t
 from .windows import load_windows
@@ -30,10 +30,23 @@ def _parser():
     s.add_argument("--dry-run", action="store_true", help="show the new files, change nothing")
     s.add_argument("--force", action="store_true", help="sync even if Windows was not fully shut down")
     s.add_argument("--show-keys", action="store_true", help="with --dry-run: print the keys too (not via pkexec)")
+    c = sub.add_parser("clock", help="check (or change) how Linux and Windows read the hardware clock")
+    c.add_argument("--set", choices=("linux-local", "linux-utc"),
+                   help="make Linux read the hardware clock as local time or UTC")
     sub.add_parser("backups", help="list backups")
     r = sub.add_parser("restore", help="undo a sync (default: the latest)")
     r.add_argument("backup", nargs="?")
     return p
+
+
+def _print_clock(c: dict):
+    print(t("cli.clock", linux=t("clock.std." + c["linux"]), windows=t("clock.std." + c["windows"])))
+    print("  " + t("clock.state." + c["state"]))
+    if c["state"] == clock.CONFLICT:
+        print("  " + t("cli.clock.fix_windows", command=c["windows_command"]))
+        print("  " + t("cli.clock.fix_linux"))
+    elif c["state"] == clock.CONFLICT_REVERSE:
+        print("  " + t("cli.clock.fix_reverse"))
 
 
 def _print_scan(s: sync.Scan):
@@ -50,14 +63,14 @@ def _print_scan(s: sync.Scan):
         print(t("cli.hint_sync"))
 
 
-READ_ONLY_COMMANDS = ("scan", "backups")
+READ_ONLY_COMMANDS = ("scan", "backups", "clock")
 
 
 def check_allowed(a, read_only: bool):
     """Started through pkexec, the helper runs as root on behalf of a user who may only be
     trusted with the fixed job: no custom paths (they would let the caller pick what root reads,
     writes or deletes) and no printing of keys."""
-    if read_only and a.cmd not in READ_ONLY_COMMANDS:
+    if read_only and (a.cmd not in READ_ONLY_COMMANDS or getattr(a, "set", None)):
         raise DualPairError("read_only", command=a.cmd)
     if "PKEXEC_UID" in os.environ:
         custom = [opt for opt, used in (("--win", a.win), ("--bluez-dir", a.bluez_dir != bluez.BLUEZ_DIR),
@@ -81,12 +94,25 @@ def run(a) -> int:
         print(json.dumps(res) if a.json else t("cli.restored", backup=res["restored"]))
         return 0
 
+    if a.cmd == "clock":
+        win = load_windows(a.win)
+        if a.set:
+            clock.set_linux(local=a.set == "linux-local")
+        c = clock.status(win)
+        if a.json:
+            print(json.dumps({"clock": c}))
+        else:
+            _print_clock(c)
+        return 0
+
     s = sync.scan(load_windows(a.win), a.bluez_dir)
     if a.cmd == "scan":
         if a.json:
-            print(json.dumps(s.to_dict()))
+            print(json.dumps(dict(s.to_dict(), clock=clock.status(s.windows))))
         else:
             _print_scan(s)
+            print()
+            _print_clock(clock.status(s.windows))
         return 0
 
     res = sync.apply(s, None if a.all else a.addresses, a.state_dir, restart, a.force, a.dry_run, a.show_keys)

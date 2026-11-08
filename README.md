@@ -2,15 +2,31 @@
 
 [![CI](https://github.com/Diego230/dualPair/actions/workflows/ci.yml/badge.svg)](https://github.com/Diego230/dualPair/actions/workflows/ci.yml)
 
-Use the same Bluetooth devices in Windows and Linux on a dual-boot PC, without pairing them again every time you switch.
+Fixes what breaks when Windows and Linux share a PC (dual boot). Two apps, one per system: each works alone for simple fixes.
 
-**Status: prototype (0.1.1).** Tested on one real dual-boot PC (see [Tested on](#tested-on)). Not yet tested on many machines.
+- **Bluetooth**: use the same devices in both systems without pairing them again every time you switch.
+- **Clock**: stop the time being wrong in Windows after using Linux (and the other way round).
+
+**Status: prototype (0.2.0).** Tested on one real dual-boot PC (see [Tested on](#tested-on)). Not yet tested on many machines.
 
 ## Why devices stop working
 
 When you pair a device, the computer and the device agree on a secret key. Windows and Linux each create their own key for the same Bluetooth adapter, but the device only remembers the last one. So whichever system paired last works, and the other one is rejected.
 
 DualPair fixes this by copying Windows' keys into Linux. Both systems then use the same key.
+
+## The clock problem
+
+The PC has one hardware clock (RTC), shared by both systems. Linux reads it as UTC, Windows as local time, so after switching the time is off by the time zone offset (1-2 hours in Italy). DualPair shows how each system reads it (**Clock** tab) and offers both fixes:
+
+- **Windows in UTC (recommended).** Done once in Windows: registry value `RealTimeIsUniversal=1`. Use **DualPair for Windows** (*Use UTC*), or the `reg add` command the Linux app shows with a copy button.
+- **Linux in local time.** One click in the Linux app (`timedatectl set-local-rtc 1`). systemd does not recommend it: the time can be wrong for a while after daylight-saving changes.
+
+If you later put Windows in UTC after having set Linux to local time, the app notices and offers to put Linux back to UTC.
+
+## DualPair for Windows
+
+The `windows/` folder (or `dualpair-windows-<version>.zip` from the releases) holds a small Windows app: double-click `DualPair.cmd`, accept the administrator prompt. For now it handles the clock (*Use UTC*, *Back to local time*, *Sync the time now*). It also works from the command line: `DualPair.ps1 -Status`, `-SetUtc`, `-SetLocal`, `-Resync`, `-Json`.
 
 ## Tested on
 
@@ -80,6 +96,8 @@ sudo dualpair-cli sync --all --dry-run # show the files it would write (keys hid
 sudo dualpair-cli backups
 sudo dualpair-cli restore              # undo the last sync
 sudo dualpair-cli --win /path/to/SYSTEM scan   # use a specific hive file or Windows folder
+sudo dualpair-cli clock                # how Linux and Windows read the hardware clock
+sudo dualpair-cli clock --set linux-local   # or linux-utc
 ```
 
 Add `--json` for machine-readable output.
@@ -97,6 +115,7 @@ Add `--json` for machine-readable output.
 
 ```
 packaging/build-deb.sh                     # -> dist/dualpair_<version>_all.deb
+packaging/build-windows-zip.sh             # -> dist/dualpair-windows-<version>.zip
 python3 -m unittest discover -s tests -t .
 python3.12 tests/make_fixtures.py          # rebuild test hives (needs python3-hivex)
 ```
@@ -110,13 +129,13 @@ python3 -c "from dualpair.gui import main; main()"
 
 ## Continuous integration
 
-On every push and pull request, GitHub Actions runs the tests on Ubuntu 22.04 and 24.04, builds the `.deb`, installs it and runs a quick check on the installed package. The `.deb` can be downloaded from the run page (artifact `dualpair-deb`).
+On every push and pull request, GitHub Actions runs the tests on Ubuntu 22.04 and 24.04, builds the `.deb`, installs it and runs a quick check on the installed package. A Windows job runs DualPair for Windows on a real Windows machine (status, *Use UTC*, back to local time). The `.deb` and the Windows zip can be downloaded from the run page (artifacts `dualpair-deb` and `dualpair-windows`).
 
-To publish a release with the `.deb` attached, push a version tag:
+To publish a release with the `.deb` and the Windows zip attached, push a version tag:
 
 ```
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
 ## Layout
@@ -128,7 +147,9 @@ git push origin v0.1.0
 | `dualpair/bluez.py` | Reads and writes BlueZ `info` files |
 | `dualpair/sync.py` | Compares, syncs, backs up, restores |
 | `dualpair/cli.py` | Command line and privileged helper (`--json`) |
-| `dualpair/gui.py` | GTK4 / libadwaita window |
+| `dualpair/clock.py` | Hardware clock check and Linux-side fix |
+| `dualpair/gui.py` | GTK4 / libadwaita window (Bluetooth and Clock tabs) |
+| `windows/` | DualPair for Windows (PowerShell + Windows Forms) |
 | `dualpair/i18n.py` | English and Italian strings |
 
 License: not chosen yet.

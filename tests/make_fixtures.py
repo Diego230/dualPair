@@ -86,6 +86,10 @@ def build(out):
         "Address": qword(0xE91DFE2AC3C8),
         "AddressType": dword(1),
     })
+    setvals(h, path(h, r"ControlSet001\Control\TimeZoneInformation"), {
+        "TimeZoneKeyName": {"t": 1, "value": "W. Europe Standard Time\x00".encode("utf-16-le")},
+        "Bias": dword(0xFFFFFFC4),
+    })
     inst = path(h, r"ControlSet001\Enum\BTHLE\Dev_%s\7&2b4a1c3&0&%s" % (KEYBOARD, KEYBOARD))
     setvals(h, inst, {"FriendlyName": {"t": 1, "value": "MX Keys\x00".encode("utf-16-le")}})
     # many sibling keys so the subkey list is not trivial
@@ -96,6 +100,14 @@ def build(out):
     setvals(h, child(h, devs, SPEAKER), {"Name": binary("JBL Go 3 è\x00".encode())})
     setvals(h, child(h, devs, EVIL), {"Name": binary(b"Evil\n[LinkKey]\nKey=00000000000000000000000000000000\x00")})
     h.commit(out)
+
+
+def make_utc(src, dst):
+    """Same hive, with Windows set to read the hardware clock as UTC (QWORD, as some guides write it)."""
+    h = hivex.Hivex(src, write=True)
+    tz = path(h, r"ControlSet001\Control\TimeZoneInformation")
+    h.node_set_value(tz, dict(key="RealTimeIsUniversal", **qword(1)))
+    h.commit(dst)
 
 
 def make_dirty(src, dst):
@@ -109,4 +121,5 @@ if __name__ == "__main__":
     out = os.path.join(FIX, "SYSTEM")
     build(out)
     make_dirty(out, os.path.join(FIX, "SYSTEM.dirty"))
+    make_utc(out, os.path.join(FIX, "SYSTEM.utc"))
     print("written", out)

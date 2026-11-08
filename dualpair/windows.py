@@ -77,6 +77,9 @@ class WindowsData:
     control_set: int
     adapters: list[str] = field(default_factory=list)
     devices: list[WinDevice] = field(default_factory=list)
+    bt_present: bool = True              # False: Windows has no Bluetooth pairings at all
+    rtc_utc: bool = False                # RealTimeIsUniversal=1: Windows reads the hardware clock as UTC
+    timezone: str | None = None          # Windows time zone name, e.g. "W. Europe Standard Time"
 
 
 # ---------------------------------------------------------------- hive parsing
@@ -112,12 +115,15 @@ def read_hive(hive: Hive, source: str) -> WindowsData:
     bthle_key = hive.open(r"ControlSet%03d\Enum\BTHLE" % current)
     params = hive.open(r"ControlSet%03d\Services\BTHPORT\Parameters" % current)
     keys = params.subkey("Keys") if params else None
-    if keys is None:
-        raise DualPairError("no_bt_keys")
-    devices_key = params.subkey("Devices")
+    devices_key = params.subkey("Devices") if params else None
 
-    data = WindowsData(source=source, hive_dirty=hive.dirty, control_set=current)
-    for adapter in keys.subkeys():
+    data = WindowsData(source=source, hive_dirty=hive.dirty, control_set=current, bt_present=keys is not None)
+    tz = hive.open(r"ControlSet%03d\Control\TimeZoneInformation" % current)
+    if tz is not None:
+        data.rtc_utc = tz.get("RealTimeIsUniversal") == 1     # DWORD or QWORD
+        name = tz.get("TimeZoneKeyName")
+        data.timezone = clean_name(name) if isinstance(name, str) else None
+    for adapter in (keys.subkeys() if keys is not None else []):
         if not _HEX12.match(adapter.name):
             continue
         amac = to_mac(adapter.name)

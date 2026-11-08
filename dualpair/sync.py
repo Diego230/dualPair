@@ -95,9 +95,12 @@ def scan(windows: WindowsData, bluez_root: str = bluez.BLUEZ_DIR) -> Scan:
     s = Scan(windows, bluez_root)
     if windows.hive_dirty:
         s.notes.append({"code": "hive_dirty"})
+    if not windows.bt_present:
+        s.notes.append({"code": "no_bt_keys"})
     lin_adapters = bluez.adapters(bluez_root)
-    if not lin_adapters:
-        raise DualPairError("no_linux_adapter", path=bluez_root)
+    if not lin_adapters:  # not fatal: the other dual-boot checks (clock) still work
+        s.notes.append({"code": "no_linux_adapter"})
+        return s
     mapping = _map_adapters(windows.adapters, lin_adapters, s.notes)
     lin_devs = {a: bluez.devices(a, bluez_root) for a in lin_adapters}
     seen = set()

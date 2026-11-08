@@ -53,6 +53,12 @@ jobs:
           /usr/bin/python3 -c "import sys; sys.path.insert(0, '/usr/lib/dualpair'); import dualpair.gui; print('gui import ok')"
           desktop-file-validate /usr/share/applications/io.github.dualpair.DualPair.desktop || true
 
+      - name: Build Windows zip
+        if: matrix.os == 'ubuntu-24.04'
+        run: |
+          packaging/build-windows-zip.sh
+          pwsh -NoProfile -Command '$e=$null; [System.Management.Automation.Language.Parser]::ParseFile("windows/DualPair.ps1",[ref]$null,[ref]$e) | Out-Null; if ($e) { $e; exit 1 } else { "PowerShell parse ok" }'
+
       - name: Upload .deb
         if: matrix.os == 'ubuntu-24.04'
         uses: actions/upload-artifact@v4
@@ -60,10 +66,45 @@ jobs:
           name: dualpair-deb
           path: dist/*.deb
 
+      - name: Upload Windows zip
+        if: matrix.os == 'ubuntu-24.04'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dualpair-windows
+          path: dist/dualpair-windows-*.zip
+
+  windows:
+    name: Windows tool (windows-latest)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: powershell   # Windows PowerShell 5.1, what users have
+    steps:
+      - uses: actions/checkout@v4
+      - name: Status, Use UTC, back to local time
+        run: |
+          $ps = 'windows\DualPair.ps1'
+          function Run([string[]]$a) {
+            $out = powershell -NoProfile -ExecutionPolicy Bypass -File $ps @a
+            if ($LASTEXITCODE -ne 0) { throw "exit $LASTEXITCODE" }
+            return $out
+          }
+          $s = Run @('-Status', '-Json') | ConvertFrom-Json
+          "initial: $($s | ConvertTo-Json -Compress)"
+          $s = Run @('-SetUtc', '-Json') | ConvertFrom-Json
+          if (-not $s.rtc_utc) { throw 'SetUtc did not apply' }
+          $v = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\TimeZoneInformation').RealTimeIsUniversal
+          if ($v -ne 1) { throw "registry value is $v" }
+          $s = Run @('-SetLocal', '-Json') | ConvertFrom-Json
+          if ($s.rtc_utc) { throw 'SetLocal did not apply' }
+          $s = Run @('-Status')
+          "text status: $s"
+          "Windows tool ok"
+
   release:
     name: Release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: test
+    needs: [test, windows]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -72,7 +113,11 @@ jobs:
         with:
           name: dualpair-deb
           path: dist
-      - name: Create GitHub release with the .deb
+      - uses: actions/download-artifact@v4
+        with:
+          name: dualpair-windows
+          path: dist
+      - name: Create GitHub release with the .deb and the Windows zip
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" dist/*.deb --repo "${GITHUB_REPOSITORY}" --title "DualPair ${GITHUB_REF_NAME}" --generate-notes
+        run: gh release create "${GITHUB_REF_NAME}" dist/*.deb dist/*.zip --repo "${GITHUB_REPOSITORY}" --title "DualPair ${GITHUB_REF_NAME}" --generate-notes
