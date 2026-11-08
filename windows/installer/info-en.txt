@@ -1,0 +1,19 @@
+DualPair for Windows
+
+What this program installs:
+
+- DualPair in C:\Program Files\DualPair, with a Start menu entry.
+
+- A scheduled task "DualPair\Agent" that runs as SYSTEM: at every Windows start it
+  applies what you asked for in DualPair for Linux (clock, Fast Startup, boot order)
+  and updates the shared status; when you open DualPair, it reads the Bluetooth keys
+  and Wi-Fi networks, which only SYSTEM can read.
+
+- A protected folder C:\ProgramData\DualPair (writable only by SYSTEM and
+  administrators) to talk to the task.
+
+- A notice at logon (Startup folder) when Linux sent something to confirm.
+
+DualPair does not use the Internet. It changes system settings (Bluetooth keys,
+Wi-Fi networks, clock, Fast Startup, boot order) only when you ask for it.
+Uninstalling removes everything, including the task and the ProgramData folder.

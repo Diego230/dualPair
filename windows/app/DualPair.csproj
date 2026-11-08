@@ -13,6 +13,9 @@
     <Prefer32Bit>false</Prefer32Bit>
     <Version>0.4.1</Version>
     <Product>DualPair</Product>
+    <Company>DualPair</Company>
+    <AssemblyTitle>DualPair for Windows</AssemblyTitle>
+    <FileVersion>0.4.1.0</FileVersion>
     <Description>DualPair for Windows: fixes what breaks when Windows and Linux share a PC</Description>
     <Copyright>Copyright (C) 2026 Diego Buono. License: GPL-3.0-or-later</Copyright>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>

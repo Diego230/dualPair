@@ -25,9 +25,18 @@ WizardStyle=modern
 MinVersion=10.0
 LicenseFile=..\..\LICENSE
 
+VersionInfoVersion={#AppVersion}
+VersionInfoProductName=DualPair
+VersionInfoProductVersion={#AppVersion}
+VersionInfoDescription=DualPair for Windows installer
+VersionInfoCopyright=Copyright (C) 2026 Diego Buono. GPL-3.0-or-later
+AppPublisherURL=https://github.com/Diego230/dualPair
+AppSupportURL=https://github.com/Diego230/dualPair/issues
+
 [Languages]
-Name: "it"; MessagesFile: "compiler:Languages\Italian.isl"
-Name: "en"; MessagesFile: "compiler:Default.isl"
+; before installing, the installer lists what it installs (scheduled task, protected folder, logon notice)
+Name: "it"; MessagesFile: "compiler:Languages\Italian.isl"; InfoBeforeFile: "info-it.txt"
+Name: "en"; MessagesFile: "compiler:Default.isl"; InfoBeforeFile: "info-en.txt"
 
 [CustomMessages]
 it.OpenApp=Apri DualPair

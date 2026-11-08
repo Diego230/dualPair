@@ -42,7 +42,7 @@ Each app lists the networks saved in its system (NetworkManager on Linux, Window
 
 ## DualPair for Windows
 
-Download `DualPair-Setup-<version>.exe` from the releases (or the `dualpair-windows` artifact of a CI run) and install it. It needs nothing else: it uses .NET Framework 4.8, already part of Windows 10 and 11. Until the installer is signed, Windows shows *Windows protected your PC*: click *More info*, then *Run anyway*.
+Download `DualPair-Setup-<version>.exe` from the releases (or the `dualpair-windows` artifact of a CI run) and install it. It needs nothing else: it uses .NET Framework 4.8, already part of Windows 10 and 11. Until the installer is signed, Windows shows *Windows protected your PC*: click *More info*, then *Run anyway*. With **Smart App Control** on (Windows Security → App & browser control), unsigned programs are blocked outright: turn it off while trying DualPair, until signed builds are available.
 
 - **Bluetooth tab**: devices paired in Windows and whether Linux has the same key (compared by fingerprint, keys never leave their system for this); keys sent from Linux, to import after confirming; *Export for Linux*; *Undo last import*.
 - **Wi-Fi tab**: saved networks and whether Linux has them with the same password; networks sent from Linux, to import after confirming; *Send selected to Linux*.
@@ -219,6 +219,10 @@ git push origin v0.4.0
 | `windows/tests/`, `tests/cross_check.py` | Windows tests and Python ↔ C# protocol cross-check |
 | `docs/protocol.md` | Exchange protocol between the two apps |
 | `dualpair/i18n.py` | English and Italian strings |
+
+## Code signing and privacy
+
+See the [code signing policy](docs/code-signing-policy.md). DualPair does not use the network.
 
 ## License
 

@@ -1,0 +1,20 @@
+DualPair per Windows
+
+Cosa installa questo programma:
+
+- DualPair in C:\Program Files\DualPair, con una voce nel menu Start.
+
+- Un'attività pianificata "DualPair\Agent" che gira come SYSTEM: a ogni avvio di
+  Windows applica le richieste fatte in DualPair per Linux (orario, avvio rapido,
+  ordine di avvio, se lo hai chiesto) e aggiorna lo stato condiviso; quando apri
+  DualPair, legge le chiavi Bluetooth e le reti Wi-Fi, che solo SYSTEM può leggere.
+
+- Una cartella protetta C:\ProgramData\DualPair (scrivibile solo da SYSTEM e dagli
+  amministratori) per comunicare con l'attività.
+
+- Un avviso all'accesso (cartella Esecuzione automatica) quando Linux ha inviato
+  qualcosa da confermare.
+
+DualPair non usa Internet. Modifica impostazioni di sistema (chiavi Bluetooth, reti
+Wi-Fi, orologio, avvio rapido, ordine di avvio) solo quando lo chiedi tu.
+La disinstallazione rimuove tutto, compresa l'attività e la cartella in ProgramData.
