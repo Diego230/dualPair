@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import configparser
+import datetime
 import io
 import os
 import re
@@ -76,6 +77,36 @@ class LinuxDevice:
     @property
     def paired(self) -> bool:
         return bool(self.link_key or self.ltk)
+
+    @property
+    def kind(self) -> str:
+        if self.link_key and self.ltk:
+            return "dual"
+        return "le" if self.ltk else "classic"
+
+    @property
+    def paired_at(self) -> datetime.datetime | None:
+        try:
+            return datetime.datetime.fromtimestamp(os.path.getmtime(self.path), datetime.timezone.utc)
+        except OSError:
+            return None
+
+    def keys(self):
+        """The keys as a windows.WinDevice-like record (for sending them to Windows)."""
+        from .windows import LEKeys, WinDevice
+        le = None
+        if self.cfg.has_section("LongTermKey"):
+            t = self.cfg["LongTermKey"]
+            irk = self.cfg.get("IdentityResolvingKey", "Key", fallback=None)
+            try:
+                le = LEKeys(ltk=t.get("Key", "").upper(), enc_size=int(t.get("EncSize", "16")),
+                            ediv=int(t.get("EDiv", "0")), rand=int(t.get("Rand", "0")),
+                            irk=irk.upper() if irk else None,
+                            address_type=self.cfg.get("General", "AddressType", fallback="public"),
+                            authenticated=int(t.get("Authenticated", "0")))
+            except ValueError:
+                le = None
+        return WinDevice(self.adapter, self.address, self.name, self.link_key, le, self.paired_at)
 
 
 def adapters(root: str = BLUEZ_DIR) -> list[str]:

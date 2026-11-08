@@ -7,6 +7,7 @@ Format reference: https://github.com/msuhanov/regf/blob/master/Windows%20registr
 """
 from __future__ import annotations
 
+import datetime
 import struct
 
 REG_NONE = 0
@@ -87,6 +88,7 @@ class Key:
         if self.sig != b"nk":
             raise HiveError(f"expected key node at {offset:#x}, found {self.sig!r}")
         (self.flags,) = struct.unpack_from("<H", c, 2)
+        (self._filetime,) = struct.unpack_from("<Q", c, 4)
         (self._n_subkeys,) = struct.unpack_from("<I", c, 20)
         (self._subkeys_off,) = struct.unpack_from("<I", c, 28)
         (self._n_values,) = struct.unpack_from("<I", c, 36)
@@ -96,6 +98,17 @@ class Key:
 
     def __repr__(self):
         return f"<Key {self.name!r}>"
+
+    @property
+    def last_written(self) -> "datetime.datetime | None":
+        """When the key (or one of its values) last changed, in UTC. None if not set."""
+        if not self._filetime:
+            return None
+        try:
+            return (datetime.datetime(1601, 1, 1, tzinfo=datetime.timezone.utc)
+                    + datetime.timedelta(microseconds=self._filetime // 10))
+        except OverflowError:
+            return None
 
     # -- subkeys -----------------------------------------------------------
     def subkeys(self) -> list["Key"]:

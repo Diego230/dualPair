@@ -8,6 +8,7 @@ The hive is opened read-only: Windows is never modified.
 """
 from __future__ import annotations
 
+import datetime
 import json
 import os
 import re
@@ -62,6 +63,7 @@ class WinDevice:
     name: str | None = None
     link_key: str | None = None   # classic
     le: LEKeys | None = None
+    paired_at: datetime.datetime | None = None   # when Windows last stored keys for it
 
     @property
     def kind(self) -> str:
@@ -80,6 +82,7 @@ class WindowsData:
     bt_present: bool = True              # False: Windows has no Bluetooth pairings at all
     rtc_utc: bool = False                # RealTimeIsUniversal=1: Windows reads the hardware clock as UTC
     timezone: str | None = None          # Windows time zone name, e.g. "W. Europe Standard Time"
+    export_id: str | None = None         # set when the data comes from a DualPair for Windows export
 
 
 # ---------------------------------------------------------------- hive parsing
@@ -138,7 +141,9 @@ def read_hive(hive: Hive, source: str) -> WindowsData:
 
         for v in adapter.values():  # classic link keys; skips MasterIRK, CentralIRK, ...
             if _HEX12.match(v.name) and v.type == REG_BINARY and len(v.raw) == 16:
-                dev(v.name).link_key = v.raw.hex().upper()
+                d = dev(v.name)
+                d.link_key = v.raw.hex().upper()
+                d.paired_at = adapter.last_written   # values have no time of their own
         for sk in adapter.subkeys():  # Bluetooth LE
             if not _HEX12.match(sk.name):
                 continue
@@ -149,6 +154,8 @@ def read_hive(hive: Hive, source: str) -> WindowsData:
             rand = sk.get("ERand") or 0
             irk = sk.get("IRK")
             d = dev(sk.name)
+            if sk.last_written and (d.paired_at is None or sk.last_written > d.paired_at):
+                d.paired_at = sk.last_written
             if not d.name:
                 d.name = _name_from_bthle(bthle_key, sk.name)
             auth = 2 if (ediv == 0 and rand == 0) else 0

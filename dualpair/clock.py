@@ -40,6 +40,21 @@ def linux_rtc_local() -> bool:
         return False
 
 
+def linux_timezone() -> str | None:
+    try:
+        r = subprocess.run(["timedatectl", "show", "-p", "Timezone", "--value"],
+                           capture_output=True, text=True, timeout=10)
+        if r.returncode == 0 and r.stdout.strip():
+            return r.stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    try:
+        with open("/etc/timezone") as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
+
+
 def status(windows: WindowsData, linux_local: bool | None = None) -> dict:
     if linux_local is None:
         linux_local = linux_rtc_local()

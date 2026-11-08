@@ -38,6 +38,16 @@ class Plan:
     linux: bluez.LinuxDevice | None = None
 
     @property
+    def newer(self) -> str | None:
+        """For keys that differ: which system stored its keys last (a hint of who paired last)."""
+        if self.status != NEEDS_SYNC or not self.win or not self.linux:
+            return None
+        w, l = self.win.paired_at, self.linux.paired_at
+        if not w or not l:
+            return None
+        return "linux" if l > w else "windows"
+
+    @property
     def experimental(self) -> bool:
         # a new classic device gets a guessed key type; LE imports are well understood
         return self.status == WINDOWS_ONLY and self.kind in ("classic", "dual")
@@ -46,7 +56,7 @@ class Plan:
         return {
             "status": self.status, "address": self.address, "name": self.name, "kind": self.kind,
             "adapter_linux": self.adapter_linux, "adapter_windows": self.adapter_windows,
-            "experimental": self.experimental,
+            "experimental": self.experimental, "newer": self.newer,
         }
 
 
