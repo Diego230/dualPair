@@ -106,7 +106,8 @@ jobs:
           $state = Join-Path $env:ProgramData 'DualPair'
           Remove-Item (Join-Path $state 'status.json') -ErrorAction SilentlyContinue
           # the window's path: a request answered by the SYSTEM task
-          "status (read only): " + (& $exe --status --json)
+          $st0 = & $exe --status --json | Out-String
+          "status (read only, includes the real firmware boot order parsed from bcdedit): $st0"
           $r = & $exe --run status --json | ConvertFrom-Json
           "answer: $($r | ConvertTo-Json -Compress -Depth 5)"
           if ($r.result.error) { throw "agent did not answer: $($r.result.error)" }
