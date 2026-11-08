@@ -66,6 +66,18 @@ One dual-boot PC (Windows + Ubuntu, Windows on NVMe, no BitLocker), November 202
 | JBL LIVE460NC headphones | Classic | *Keys differ* → synced | Works in Linux, then Windows, then Linux again, without pairing again |
 | JBL Go 3 speaker | Classic | *Only in Windows* → imported (experimental) | Not tested yet |
 
+Also checked on the same PC (DualPair 0.4):
+
+| Feature | Result |
+|---|---|
+| Wi-Fi | 7 networks (WPA3 and open) listed on both sides; the Linux (NetworkManager) and Windows fingerprints match, so both apps report *same password* |
+| Clock | *Use UTC* in DualPair for Windows; both systems now read the hardware clock as UTC, the time stays right after switching |
+| Exchange through the EFI partition | each app shows the other's status (versions, clock, Bluetooth and Wi-Fi fingerprints) |
+| Fast Startup | read as *off* from the Windows registry |
+| Boot order | Linux entry (`\efi\ubuntu\grubx64.efi`) found and first; *Keep Linux first* turned on |
+
+Not tried on a real PC yet: changing the boot order, importing Wi-Fi networks, restoring Linux first after a Windows update.
+
 Windows was found and read automatically. After syncing, audio devices may need one click on *Connect* in Linux: when they turn on, they reconnect to the last computer they were connected to, so after using Windows that is Windows. This is not a key problem: Connect works without pairing again.
 
 ## How to use it
