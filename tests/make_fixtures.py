@@ -90,6 +90,8 @@ def build(out):
         "TimeZoneKeyName": {"t": 1, "value": "W. Europe Standard Time\x00".encode("utf-16-le")},
         "Bias": dword(0xFFFFFFC4),
     })
+    setvals(h, path(h, r"ControlSet001\Control\Session Manager\Power"), {"HiberbootEnabled": dword(1)})
+    setvals(h, path(h, r"ControlSet001\Control\Power"), {"HibernateEnabled": dword(1)})
     inst = path(h, r"ControlSet001\Enum\BTHLE\Dev_%s\7&2b4a1c3&0&%s" % (KEYBOARD, KEYBOARD))
     setvals(h, inst, {"FriendlyName": {"t": 1, "value": "MX Keys\x00".encode("utf-16-le")}})
     # many sibling keys so the subkey list is not trivial

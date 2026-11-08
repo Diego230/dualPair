@@ -1,5 +1,5 @@
 ; Installer for DualPair for Windows (Inno Setup 6.3+). Built by CI:  iscc installer\DualPair.iss
-#define AppVersion "0.3.0"
+#define AppVersion "0.4.0"
 
 [Setup]
 AppId={{8F2C4D3B-6E1A-4F7B-9C2D-1A5B3E7F9D10}

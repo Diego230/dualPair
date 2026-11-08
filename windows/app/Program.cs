@@ -20,7 +20,7 @@ namespace DualPair
 {
     public static class Program
     {
-        public const string Version = "0.3.0";
+        public const string Version = "0.4.0";
 
         public static bool IsAdmin()
         {
@@ -42,6 +42,7 @@ namespace DualPair
             opt.MailboxDir = Arg(args, "--mailbox-dir");
             opt.ParamsPath = Arg(args, "--registry-params");
             if (Arg(args, "--clock-key") != null) Clock.KeyPath = Arg(args, "--clock-key");
+            if (Arg(args, "--power-key") != null) FastStartup.KeyPath = Arg(args, "--power-key");
             var json = args.Contains("--json");
 
             try
@@ -69,6 +70,14 @@ namespace DualPair
                         result["result"] = Install.Ask(opt, req);
                     }
                     result["rtc_utc"] = Clock.RtcUtc();
+                    result["fast_startup"] = FastStartup.Enabled();
+                    if (args.Contains("--status"))
+                    {
+                        var boot = FirmwareBoot.Read();   // read only
+                        result["boot"] = boot == null ? null : new Dictionary<string, object> {
+                            { "first", boot.First != null ? boot.First.Path : null }, { "order", boot.Order.Count },
+                            { "entries", boot.Entries.Values.Select(e => (object)(e.Id + " " + e.Path)).ToArray() } };
+                    }
                     result["timezone"] = Clock.TimeZoneName();
                     result["version"] = Version;
                     Console.WriteLine(json ? Protocol.Serializer().Serialize(result)

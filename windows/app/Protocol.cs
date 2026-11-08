@@ -44,6 +44,15 @@ namespace DualPair
         }
     }
 
+    public class WifiNetwork
+    {
+        public string Ssid;
+        public string Security;       // open, wpa-psk, sae
+        public string Password;       // null for open networks
+        public bool Hidden;
+        public string Fingerprint() { return Protocol.WifiFingerprint(Ssid, Password); }
+    }
+
     public class Message
     {
         public string Id;
@@ -53,6 +62,8 @@ namespace DualPair
         public DateTime Expires;
         public List<Device> Devices = new List<Device>();   // type keys
         public bool WindowsUtc;                              // type set_clock
+        public bool FastStartupEnabled;                      // type set_fast_startup
+        public List<WifiNetwork> Networks = new List<WifiNetwork>();   // type wifi
     }
 
     public static class Protocol
@@ -66,6 +77,9 @@ namespace DualPair
         static readonly Regex MacRe = new Regex(@"^([0-9A-F]{2}:){5}[0-9A-F]{2}$");
         static readonly Regex Hex32Re = new Regex(@"^[0-9A-F]{32}$");
         static readonly Regex UInt64Re = new Regex(@"^[0-9]{1,20}$");
+        static readonly Regex Hex64Re = new Regex(@"^[0-9A-Fa-f]{64}$");
+        static readonly Regex ControlRe = new Regex(@"[\x00-\x1f\x7f]");
+        public static readonly string[] Securities = { "open", "wpa-psk", "sae" };
 
         public static bool IsMac(string s) { return s != null && MacRe.IsMatch(s); }
         public static bool IsHex32(string s) { return s != null && Hex32Re.IsMatch(s); }
@@ -179,6 +193,42 @@ namespace DualPair
             }
         }
 
+        public static string WifiFingerprint(string ssid, string password)
+        {
+            using (var sha = SHA256.Create())
+            {
+                var h = sha.ComputeHash(Encoding.UTF8.GetBytes("dualpair-fp-v1|wifi|" + ssid + "|" + (password ?? "")));
+                return Hex(h).Substring(0, 8).ToLowerInvariant();
+            }
+        }
+
+        public static WifiNetwork ParseWifi(object o)
+        {
+            var n = o as Dictionary<string, object>;
+            if (n == null) throw new InvalidMessageException("bad network");
+            var ssid = Get(n, "ssid") as string;
+            var sec = Get(n, "security") as string;
+            var pw = Get(n, "password");
+            var hidden = n.ContainsKey("hidden") ? n["hidden"] : false;
+            if (ssid == null || Encoding.UTF8.GetByteCount(ssid) < 1 || Encoding.UTF8.GetByteCount(ssid) > 32 || ControlRe.IsMatch(ssid))
+                throw new InvalidMessageException("bad ssid");
+            if (Array.IndexOf(Securities, sec) < 0) throw new InvalidMessageException("bad security");
+            if (sec == "open") { if (pw != null) throw new InvalidMessageException("open network with password"); }
+            else
+            {
+                var p = pw as string;
+                if (p == null || !((p.Length >= 8 && p.Length <= 63 && !ControlRe.IsMatch(p)) || Hex64Re.IsMatch(p)))
+                    throw new InvalidMessageException("bad password");
+            }
+            if (!(hidden is bool)) throw new InvalidMessageException("bad hidden");
+            return new WifiNetwork { Ssid = ssid, Security = sec, Password = pw as string, Hidden = (bool)hidden };
+        }
+
+        public static Dictionary<string, object> WifiJson(WifiNetwork n)
+        {
+            return new Dictionary<string, object> { { "ssid", n.Ssid }, { "security", n.Security }, { "password", n.Password }, { "hidden", n.Hidden } };
+        }
+
         // ------------------------------------------------------------------ validation
         static int Int(object o, int lo, int hi)
         {
@@ -258,6 +308,19 @@ namespace DualPair
                 var p = Get(m, "payload") as Dictionary<string, object>;
                 if (p == null || !(Get(p, "windows_utc") is bool)) throw new InvalidMessageException("bad payload");
                 msg.WindowsUtc = (bool)p["windows_utc"];
+            }
+            else if (msg.Type == "set_fast_startup")
+            {
+                var p = Get(m, "payload") as Dictionary<string, object>;
+                if (p == null || !(Get(p, "enabled") is bool)) throw new InvalidMessageException("bad payload");
+                msg.FastStartupEnabled = (bool)p["enabled"];
+            }
+            else if (msg.Type == "wifi")
+            {
+                var p = Get(m, "payload") as Dictionary<string, object>;
+                var list = p != null ? Get(p, "networks") as object[] : null;
+                if (list == null || list.Length == 0 || list.Length > MaxDevices) throw new InvalidMessageException("bad network list");
+                foreach (var n in list) msg.Networks.Add(ParseWifi(n));
             }
             else throw new InvalidMessageException("unknown type");
             return msg;

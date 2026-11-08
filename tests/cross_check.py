@@ -24,12 +24,19 @@ def make(folder):
                             "FEDCBA9876543210FEDCBA9876543210", "static", 0)),
     ]
     mid = mailbox.send(folder, "windows", "keys", {"devices": [mailbox.device_to_json(d) for d in devices]})
-    print("wrote", mid)
+    wid = mailbox.send(folder, "windows", "wifi", {"networks": [
+        mailbox.wifi_to_json(mailbox.WifiNetwork("Caffè Linux", "sae", "pässwörd-ünicode", True))]})
+    print("wrote", mid, wid)
 
 
 def check(to_linux_dir):
     folder = os.path.dirname(to_linux_dir)
-    msgs = mailbox.list_messages(folder, "linux")
+    all_msgs = mailbox.list_messages(folder, "linux")
+    wifi_msgs = [m for m in all_msgs if m["type"] == "wifi"]
+    assert len(wifi_msgs) == 1, f"expected 1 Wi-Fi export: {os.listdir(to_linux_dir)}"
+    n = wifi_msgs[0]["_networks"][0]
+    assert (n.ssid, n.security, n.password) == ("Rete Windows", "wpa-psk", "pässwörd windows"), n
+    msgs = [m for m in all_msgs if m["type"] == "keys"]
     assert len(msgs) == 1, f"expected 1 valid export, found {len(msgs)}: {os.listdir(to_linux_dir)}"
     devs = {d.address: d for d in msgs[0]["_devices"]}
     assert devs["A4:BF:C6:D0:E5:FF"].link_key == "CAFEBABECAFEBABECAFEBABECAFEBABE", devs

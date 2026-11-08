@@ -6,7 +6,7 @@ import json
 import os
 import sys
 
-from . import __version__, bluez, clock, mailbox, sync
+from . import __version__, bluez, boot, clock, mailbox, sync, wifi
 from .errors import DualPairError
 from .i18n import t
 from .windows import load_windows
@@ -21,6 +21,7 @@ def _parser():
     p.add_argument("--bluez-dir", default=bluez.BLUEZ_DIR, help=argparse.SUPPRESS)
     p.add_argument("--state-dir", default=sync.STATE_DIR, help=argparse.SUPPRESS)
     p.add_argument("--mailbox-dir", default=None, help=argparse.SUPPRESS)
+    p.add_argument("--nm-dir", default=wifi.NM_DIR, help=argparse.SUPPRESS)
     p.add_argument("--no-restart", action="store_true", help="do not restart the bluetooth service")
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("scan", help="show devices and what needs syncing")
@@ -36,6 +37,19 @@ def _parser():
                    help="linux-*: change Linux now; windows-*: ask DualPair for Windows to change it at the next start")
     w = sub.add_parser("send-to-windows", help="send Linux keys to DualPair for Windows (devices paired last on Linux)")
     w.add_argument("addresses", nargs="+", metavar="MAC")
+    wf = sub.add_parser("wifi", help="saved Wi-Fi networks, compared with Windows")
+    wg = wf.add_mutually_exclusive_group()
+    wg.add_argument("--send", nargs="+", metavar="SSID", help="send these networks (with passwords) to DualPair for Windows")
+    wg.add_argument("--import", dest="import_id", metavar="ID", help="import networks sent by DualPair for Windows")
+    wg.add_argument("--discard", metavar="ID", help="delete networks sent by DualPair for Windows without importing")
+    wf.add_argument("ssids", nargs="*", metavar="SSID", help="with --import: only these networks")
+    po = sub.add_parser("power", help="Windows Fast Startup")
+    po.add_argument("--set-fast-startup", choices=("on", "off"),
+                    help="ask DualPair for Windows to turn Fast Startup on or off at the next start")
+    bo = sub.add_parser("boot", help="firmware boot order")
+    bo.add_argument("--linux-first", action="store_true", help="put Linux first in the boot order now")
+    bo.add_argument("--keep", choices=("on", "off"),
+                    help="keep Linux first: DualPair for Windows restores it after Windows updates")
     pe = sub.add_parser("pending", help="messages waiting for DualPair for Windows")
     pe.add_argument("--cancel", metavar="ID", help="withdraw a message")
     sub.add_parser("backups", help="list backups")
@@ -71,19 +85,22 @@ def _print_scan(s: sync.Scan):
         print(t("cli.hint_sync"))
 
 
-READ_ONLY_COMMANDS = ("scan", "backups", "clock", "pending")
+READ_ONLY_COMMANDS = ("scan", "backups", "clock", "pending", "wifi", "power", "boot")
 
 
 def check_allowed(a, read_only: bool):
     """Started through pkexec, the helper runs as root on behalf of a user who may only be
     trusted with the fixed job: no custom paths (they would let the caller pick what root reads,
     writes or deletes) and no printing of keys."""
-    if read_only and (a.cmd not in READ_ONLY_COMMANDS or getattr(a, "set", None) or getattr(a, "cancel", None)):
+    writes = any(getattr(a, k, None) for k in ("set", "cancel", "send", "import_id", "discard", "set_fast_startup",
+                                                "linux_first", "keep"))
+    if read_only and (a.cmd not in READ_ONLY_COMMANDS or writes):
         raise DualPairError("read_only", command=a.cmd)
     if "PKEXEC_UID" in os.environ:
         custom = [opt for opt, used in (("--win", a.win), ("--bluez-dir", a.bluez_dir != bluez.BLUEZ_DIR),
                                         ("--state-dir", a.state_dir != sync.STATE_DIR),
                                         ("--mailbox-dir", a.mailbox_dir),
+                                        ("--nm-dir", a.nm_dir != wifi.NM_DIR),
                                         ("--show-keys", getattr(a, "show_keys", False))) if used]
         if custom:
             raise DualPairError("option_not_allowed", option=", ".join(custom))
@@ -103,7 +120,22 @@ def load(a, mb) -> "WindowsData":
         return data
 
 
-def publish(mb, s: "sync.Scan | None", bluez_root: str):
+def wifi_status(nm_dir: str) -> dict:
+    nets = wifi.networks(nm_dir)
+    return {"available": nets is not None,
+            "networks": [{"ssid": n.network.ssid, "security": n.network.security, "hidden": n.network.hidden,
+                          "fingerprint": n.network.fingerprint()} for n in (nets or [])]}
+
+
+def boot_status(state_dir: str) -> dict | None:
+    st = boot.state(boot.read(), boot.load_settings(state_dir))
+    if not st["available"]:
+        return None
+    return {"linux_loader": st["linux_loader"], "keep_linux_first": st["keep_linux_first"],
+            "first_is_linux": st["first_is_linux"]}
+
+
+def publish(mb, s: "sync.Scan | None", bluez_root: str, nm_dir: str = wifi.NM_DIR, state_dir: str = sync.STATE_DIR):
     """Tell DualPair for Windows how Linux stands (no keys). Best effort."""
     if not mb:
         return
@@ -119,7 +151,8 @@ def publish(mb, s: "sync.Scan | None", bluez_root: str):
                                                                        k.le.rand if k.le else None),
                                     "paired_at": mailbox.iso(d.paired_at)})
         mailbox.write_status(mb, not clock.linux_rtc_local(), clock.linux_timezone(), devices,
-                             bool(bluez.adapters(bluez_root)))
+                             bool(bluez.adapters(bluez_root)), wifi=wifi_status(nm_dir),
+                             boot=boot_status(state_dir) if bluez_root == bluez.BLUEZ_DIR else None)
     except OSError:
         pass
 
@@ -130,8 +163,12 @@ def pending_list(mb) -> list[dict]:
         item = {"id": m["id"], "type": m["type"], "created": m["created"]}
         if m["type"] == "keys":
             item["devices"] = [d.name or d.address for d in m["_devices"]]
-        else:
+        elif m["type"] == "wifi":
+            item["networks"] = [n.ssid for n in m["_networks"]]
+        elif m["type"] == "set_clock":
             item["windows_utc"] = m["payload"]["windows_utc"]
+        else:
+            item["enabled"] = m["payload"]["enabled"]
         out.append(item)
     return out
 
@@ -143,6 +180,36 @@ def windows_app(mb) -> dict | None:
     bt = st.get("bluetooth") or {}
     return {"version": st.get("version"), "written": st.get("written"), "clock": st.get("clock"),
             "devices": len(bt.get("devices") or [])}
+
+
+def wifi_info(mb, nm_dir: str) -> dict:
+    nets = wifi.networks(nm_dir)
+    info = {"available": nets is not None}
+    info.update(wifi.compare([n.network for n in (nets or [])], mailbox.read_status(mb, "windows")))
+    saved = {n.network.ssid: n.network for n in (nets or [])}
+    info["from_windows"] = [{"id": m["id"], "created": m["created"], "networks": [
+        {"ssid": n.ssid, "security": n.security,
+         "state": "new" if n.ssid not in saved else ("same" if saved[n.ssid].fingerprint() == n.fingerprint() else "different")}
+        for n in m["_networks"]]} for m in mailbox.list_messages(mb, "linux") if m["type"] == "wifi"]
+    return info
+
+
+def power_info(win, mb) -> dict:
+    st = mailbox.read_status(mb, "windows") or {}
+    fs = win.fast_startup
+    if fs is None and isinstance((st.get("power") or {}).get("fast_startup"), bool):
+        fs = st["power"]["fast_startup"]
+    pending = next((m["payload"]["enabled"] for m in mailbox.list_messages(mb, "windows")
+                    if m["type"] == "set_fast_startup"), None)
+    return {"fast_startup": fs, "hibernated": win.hibernated, "pending": pending,
+            "windows_app": bool(st)}
+
+
+def boot_info(state_dir: str, mb) -> dict:
+    st = boot.state(boot.read(), boot.load_settings(state_dir))
+    win = (mailbox.read_status(mb, "windows") or {}).get("boot") or {}
+    st["windows_fixed_at"] = win.get("fixed_at")
+    return st
 
 
 def clock_info(win, mb) -> dict:
@@ -164,7 +231,7 @@ def run(a) -> int:
     if a.cmd == "restore":
         res = sync.restore(a.backup, a.state_dir, restart, a.bluez_dir)
         with mailbox.open_mailbox(a.mailbox_dir, disabled=a.bluez_dir != bluez.BLUEZ_DIR) as mb:
-            publish(mb, None, a.bluez_dir)
+            publish(mb, None, a.bluez_dir, a.nm_dir, a.state_dir)
         print(json.dumps(res) if a.json else t("cli.restored", backup=res["restored"]))
         return 0
 
@@ -181,11 +248,64 @@ def run(a) -> int:
                    or t("cli.no_pending")))
             return 0
 
+        if a.cmd == "wifi":
+            if a.send:
+                if not mb:
+                    raise DualPairError("no_esp")
+                saved = {n.network.ssid: n.network for n in (wifi.networks(a.nm_dir) or [])}
+                missing = [x for x in a.send if x not in saved]
+                if missing:
+                    raise DualPairError("unknown_network", ssid=", ".join(missing))
+                mid = mailbox.send(mb, "windows", "wifi", {"networks": [mailbox.wifi_to_json(saved[x]) for x in a.send]})
+                res = {"sent": a.send, "message_id": mid}
+            elif a.import_id or a.discard:
+                mid = a.import_id or a.discard
+                msg = next((m for m in mailbox.list_messages(mb, "linux") if m["type"] == "wifi" and m["id"] == mid), None)
+                if msg is None:
+                    raise DualPairError("unknown_message", id=mid)
+                res = {"results": []}
+                if a.import_id:
+                    chosen = [n for n in msg["_networks"] if not a.ssids or n.ssid in a.ssids]
+                    res["results"] = wifi.import_networks(chosen, a.nm_dir, a.state_dir,
+                                                          reload=a.nm_dir == wifi.NM_DIR)
+                mailbox.delete(mb, "linux", mid)        # passwords do not stay on the ESP
+            else:
+                res = wifi_info(mb, a.nm_dir)
+            publish(mb, None, a.bluez_dir, a.nm_dir, a.state_dir)
+            print(json.dumps({"wifi": res}) if a.json else json.dumps(res, indent=1, ensure_ascii=False))
+            return 0
+
+        if a.cmd == "boot":
+            settings = boot.load_settings(a.state_dir)
+            if a.linux_first:
+                info = boot.read()
+                if not info:
+                    raise DualPairError("boot_unknown")
+                boot.put_linux_first(info)
+            if a.keep:
+                settings["keep_linux_first"] = a.keep == "on"
+                boot.save_settings(a.state_dir, settings)
+            if a.linux_first or a.keep:
+                publish(mb, None, a.bluez_dir, a.nm_dir, a.state_dir)
+            res = boot_info(a.state_dir, mb)
+            print(json.dumps({"boot": res}) if a.json else json.dumps(res, indent=1))
+            return 0
+
+        if a.cmd == "power":
+            win = load(a, mb)
+            if a.set_fast_startup:
+                if not mb:
+                    raise DualPairError("no_esp")
+                mailbox.send(mb, "windows", "set_fast_startup", {"enabled": a.set_fast_startup == "on"})
+            res = power_info(win, mb)
+            print(json.dumps({"power": res}) if a.json else json.dumps(res, indent=1))
+            return 0
+
         if a.cmd == "clock":
             win = load(a, mb)
             if a.set in ("linux-local", "linux-utc"):
                 clock.set_linux(local=a.set == "linux-local")
-                publish(mb, None, a.bluez_dir)
+                publish(mb, None, a.bluez_dir, a.nm_dir, a.state_dir)
             elif a.set:
                 if not mb:
                     raise DualPairError("no_esp")
@@ -218,11 +338,15 @@ def run(a) -> int:
             return 0
 
         if a.cmd == "scan":
-            publish(mb, s, a.bluez_dir)
+            publish(mb, s, a.bluez_dir, a.nm_dir, a.state_dir)
             if a.json:
                 print(json.dumps(dict(s.to_dict(), clock=clock_info(s.windows, mb), windows_app=windows_app(mb),
                                       pending_to_windows=pending_list(mb),
-                                      source_kind="export" if s.windows.export_id else "disk")))
+                                      source_kind="export" if s.windows.export_id else "disk",
+                                      wifi=wifi_info(mb, a.nm_dir), power=power_info(s.windows, mb),
+                                      boot=boot_info(a.state_dir, mb)
+                                      if a.bluez_dir == bluez.BLUEZ_DIR or os.environ.get("DUALPAIR_TEST_EFIBOOTMGR")
+                                      else {"available": False})))
             else:
                 _print_scan(s)
                 print()
@@ -235,7 +359,7 @@ def run(a) -> int:
         if res["applied"] and not a.dry_run:
             if s.windows.export_id and mb:   # keys imported: do not leave them on the ESP
                 mailbox.delete(mb, "linux", s.windows.export_id)
-            publish(mb, None, a.bluez_dir)
+            publish(mb, None, a.bluez_dir, a.nm_dir, a.state_dir)
     if a.json:
         print(json.dumps(res))
     elif a.dry_run:

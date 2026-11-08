@@ -34,6 +34,20 @@ class Vectors(unittest.TestCase):
         self.assertEqual([d.address for d in m["_devices"]], ["FC:C2:07:3C:8A:D2", "A4:BF:C6:D0:E5:FF"])
         self.assertEqual(m["_devices"][0].le.rand, 12345678901234567890)
 
+    def test_wifi(self):
+        for v in VEC["wifi_fingerprints"]:
+            self.assertEqual(mailbox.wifi_fingerprint(v["ssid"], v["password"]), v["expected"])
+        m = copy.deepcopy(VEC["valid_wifi_message"])
+        m = mailbox.validate(m, "linux", m["id"] + ".json", now=NOW)
+        self.assertEqual([n.ssid for n in m["_networks"]], ["Casa", "Bar Open", "Caffè"])
+        for case in VEC["invalid_wifi_networks"]:
+            m = copy.deepcopy(VEC["valid_wifi_message"])
+            m["payload"]["networks"] = [case["network"]]
+            with self.assertRaises(mailbox.InvalidMessage, msg=case["why"]):
+                mailbox.validate(m, "linux", m["id"] + ".json", now=NOW)
+        m = copy.deepcopy(VEC["valid_fast_startup_message"])
+        self.assertFalse(mailbox.validate(m, "linux", m["id"] + ".json", now=NOW)["payload"]["enabled"])
+
     def test_invalid_messages(self):
         for case in VEC["invalid_messages"]:
             m = copy.deepcopy(VEC["valid_keys_message"])

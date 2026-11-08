@@ -13,6 +13,7 @@ import re
 import secrets
 import subprocess
 import tempfile
+from dataclasses import dataclass
 
 from . import __version__
 from .errors import DualPairError
@@ -29,10 +30,48 @@ ID_RE = re.compile(r"^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$")
 MAC_RE = re.compile(r"^([0-9A-F]{2}:){5}[0-9A-F]{2}$")
 HEX32_RE = re.compile(r"^[0-9A-F]{32}$")
 UINT64_RE = re.compile(r"^[0-9]{1,20}$")
+_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 
 
 class InvalidMessage(ValueError):
     pass
+
+
+SECURITIES = ("open", "wpa-psk", "sae")
+HEX64_RE = re.compile(r"^[0-9A-Fa-f]{64}$")
+
+
+@dataclass
+class WifiNetwork:
+    ssid: str
+    security: str             # open, wpa-psk, sae
+    password: str | None
+    hidden: bool = False
+
+    def fingerprint(self) -> str:
+        return wifi_fingerprint(self.ssid, self.password)
+
+
+def wifi_fingerprint(ssid: str, password: str | None) -> str:
+    return hashlib.sha256(f"dualpair-fp-v1|wifi|{ssid}|{password or ''}".encode("utf-8")).hexdigest()[:8]
+
+
+def check_wifi(n) -> WifiNetwork:
+    if not isinstance(n, dict):
+        raise InvalidMessage("bad network")
+    ssid, sec, pw, hidden = n.get("ssid"), n.get("security"), n.get("password"), n.get("hidden", False)
+    if not (isinstance(ssid, str) and 1 <= len(ssid.encode("utf-8")) <= 32 and not _CONTROL.search(ssid)):
+        raise InvalidMessage("bad ssid")
+    if sec not in SECURITIES:
+        raise InvalidMessage("bad security")
+    if sec == "open":
+        if pw is not None:
+            raise InvalidMessage("open network with password")
+    elif not (isinstance(pw, str) and (8 <= len(pw) <= 63 and not _CONTROL.search(pw) or HEX64_RE.match(pw))):
+        raise InvalidMessage("bad password")
+    if not isinstance(hidden, bool):
+        raise InvalidMessage("bad hidden")
+    return WifiNetwork(ssid, sec, pw, hidden)
 
 
 # ---------------------------------------------------------------- time, ids, fingerprints
@@ -174,12 +213,22 @@ def read_status(folder: str | None, system: str) -> dict | None:
     return data
 
 
-def write_status(folder: str, clock_rtc_utc: bool, timezone: str | None, devices: list[dict], bt_available: bool):
-    _write_json(os.path.join(folder, "status-linux.json"), {
+def write_status(folder: str, clock_rtc_utc: bool, timezone: str | None, devices: list[dict], bt_available: bool,
+                 wifi: dict | None = None, boot: dict | None = None):
+    data = {
         "dualpair": PROTOCOL, "system": "linux", "version": __version__, "written": iso(utcnow()),
         "clock": {"rtc_utc": clock_rtc_utc, "timezone": timezone},
         "bluetooth": {"available": bt_available, "devices": devices},
-    })
+    }
+    if wifi is not None:
+        data["wifi"] = wifi
+    if boot is not None:
+        data["boot"] = boot
+    _write_json(os.path.join(folder, "status-linux.json"), data)
+
+
+def wifi_to_json(n: WifiNetwork) -> dict:
+    return {"ssid": n.ssid, "security": n.security, "password": n.password, "hidden": n.hidden}
 
 
 # ---------------------------------------------------------------- messages
@@ -243,6 +292,15 @@ def validate(msg: dict, sender: str, filename: str, now: datetime.datetime | Non
         p = msg.get("payload")
         if not (isinstance(p, dict) and isinstance(p.get("windows_utc"), bool)):
             raise InvalidMessage("bad payload")
+    elif t == "set_fast_startup":
+        p = msg.get("payload")
+        if not (isinstance(p, dict) and isinstance(p.get("enabled"), bool)):
+            raise InvalidMessage("bad payload")
+    elif t == "wifi":
+        nets = (msg.get("payload") or {}).get("networks") if isinstance(msg.get("payload"), dict) else None
+        if not isinstance(nets, list) or not 0 < len(nets) <= MAX_DEVICES:
+            raise InvalidMessage("bad network list")
+        msg["_networks"] = [check_wifi(n) for n in nets]
     else:
         raise InvalidMessage("unknown type")
     return msg

@@ -38,8 +38,11 @@ def helper_command(write: bool = False) -> list[str]:
     return ["pkexec", "env", f"PYTHONPATH={pkg_parent}", sys.executable, "-m", "dualpair"]
 
 
+WRITE_FLAGS = ("--set", "--cancel", "--send", "--import", "--discard", "--set-fast-startup", "--linux-first", "--keep")
+
+
 def is_write(args) -> bool:
-    return args[0] in ("sync", "restore", "send-to-windows") or "--set" in args or "--cancel" in args
+    return args[0] in ("sync", "restore", "send-to-windows") or any(a in WRITE_FLAGS for a in args)
 
 
 def run_helper(*args) -> dict:
@@ -103,10 +106,172 @@ def pill(label: str, callback, suggested=True) -> Gtk.Button:
     return b
 
 
-class Window(Adw.ApplicationWindow):
+class _Tabs:
+    """Wi-Fi and Startup tabs (mixed into Window)."""
+
+    # -- Wi-Fi tab ---------------------------------------------------------
+    def build_wifi(self, res):
+        clear(self.wifi_box)
+        w = res.get("wifi") or {}
+        content = page_box()
+        self.wifi_send = {}
+        has_app = bool(res.get("windows_app"))
+        if not w.get("available"):
+            content.append(card(t("gui.wifi.no_nm"), "dialog-information-symbolic", "accent"))
+            self.wifi_box.append(scrolled(content))
+            return
+        for m in res.get("pending_to_windows", []):
+            if m["type"] == "wifi":
+                content.append(self._pending_card(t("gui.wifi.pending", networks=", ".join(m.get("networks", []))), m["id"]))
+        incoming = w.get("from_windows") or []
+        self.wifi_page.set_needs_attention(bool(incoming))
+        for m in incoming[-1:]:
+            g = Adw.PreferencesGroup(title=esc(t("gui.wifi.from_windows")), description=esc(t("gui.wifi.from_windows.desc")))
+            checks = {}
+            for n in m["networks"]:
+                row = Adw.ActionRow(title=esc(n["ssid"]),
+                                    subtitle=esc(f"{t('wifi.sec.' + n['security'])} · {t('gui.wifi.in.' + n['state'])}"))
+                c = Gtk.CheckButton(active=n["state"] != "same", valign=Gtk.Align.CENTER)
+                row.add_prefix(c)
+                row.set_activatable_widget(c)
+                checks[n["ssid"]] = c
+                g.add(row)
+            content.append(g)
+            bar = Gtk.Box(spacing=8)
+            imp = Gtk.Button(label=t("gui.wifi.import"))
+            imp.add_css_class("suggested-action")
+            mid = m["id"]
+            imp.connect("clicked", lambda *_, mid=mid, checks=checks: self.run_change(
+                ["wifi", "--import", mid, *[s for s, c in checks.items() if c.get_active()]],
+                lambda r: t("gui.wifi.imported", n=sum(1 for x in r.get("wifi", {}).get("results", []) if x["result"] != "same")), "wifi"))
+            dis = Gtk.Button(label=t("gui.wifi.discard"))
+            dis.connect("clicked", lambda *_, mid=mid: self.run_change(["wifi", "--discard", mid], lambda r: t("gui.pending.cancelled"), "wifi"))
+            bar.append(imp)
+            bar.append(dis)
+            content.append(bar)
+
+        nets = w.get("networks") or []
+        g = Adw.PreferencesGroup(title=esc(t("gui.wifi.saved")), description=esc(t("gui.wifi.saved.desc")))
+        for n in nets:
+            row = Adw.ActionRow(title=esc(n["ssid"]),
+                                subtitle=esc(f"{t('wifi.sec.' + n['security'])} · {t('gui.wifi.state.' + n['state'])}"))
+            c = Gtk.CheckButton(active=has_app and n["state"] in ("only_linux", "different"), valign=Gtk.Align.CENTER,
+                                sensitive=has_app)
+            row.add_prefix(c)
+            row.set_activatable_widget(c)
+            self.wifi_send[n["ssid"]] = c
+            g.add(row)
+        if not nets:
+            g.add(Adw.ActionRow(title=esc(t("gui.wifi.none"))))
+        content.append(g)
+        if nets:
+            if has_app:
+                send = Gtk.Button(label=t("gui.wifi.send"), halign=Gtk.Align.START)
+                send.connect("clicked", lambda *_: self._send_wifi())
+                content.append(send)
+            else:
+                hint = Gtk.Label(label=t("gui.wifi.need_app"), wrap=True, xalign=0)
+                hint.add_css_class("dim-label")
+                content.append(hint)
+        only_win = w.get("only_windows") or []
+        if only_win:
+            g = Adw.PreferencesGroup(title=esc(t("gui.wifi.only_windows")), description=esc(t("gui.wifi.only_windows.desc")))
+            for n in only_win:
+                g.add(Adw.ActionRow(title=esc(n["ssid"]), subtitle=esc(t("wifi.sec." + (n.get("security") or "wpa-psk")))))
+            content.append(g)
+        self.wifi_box.append(scrolled(content))
+
+    def _send_wifi(self):
+        ssids = [s for s, c in self.wifi_send.items() if c.get_active()]
+        if ssids:
+            self.run_change(["wifi", "--send", *ssids], lambda r: t("gui.wifi.sent", n=len(ssids)), "wifi")
+
+    # -- Startup tab -------------------------------------------------------
+    def build_boot(self, res):
+        clear(self.boot_box)
+        content = page_box()
+        p = res.get("power") or {}
+        b = res.get("boot") or {}
+        has_app = bool(res.get("windows_app"))
+        attention = False
+
+        g = Adw.PreferencesGroup(title=esc(t("gui.fast.title")), description=esc(t("gui.fast.desc")))
+        fs = p.get("fast_startup")
+        row = Adw.ActionRow(title=esc(t("gui.fast.state")))
+        v = Gtk.Label(label=t("gui.fast.on" if fs else ("gui.fast.off" if fs is False else "gui.fast.unknown")), valign=Gtk.Align.CENTER)
+        v.add_css_class("heading")
+        row.add_suffix(v)
+        g.add(row)
+        content.append(g)
+        if p.get("hibernated"):
+            content.append(card(t("gui.fast.hibernated")))
+            attention = True
+        if p.get("pending") is not None:
+            content.append(self._pending_card(t("gui.fast.pending_off" if p["pending"] is False else "gui.fast.pending_on"),
+                                              next((m["id"] for m in res.get("pending_to_windows", []) if m["type"] == "set_fast_startup"), "")))
+        elif fs:
+            attention = True
+            fix = Adw.PreferencesGroup()
+            if has_app:
+                r = Adw.ActionRow(title=esc(t("gui.fast.turn_off")), subtitle=esc(t("gui.fast.turn_off.desc")))
+                btn = Gtk.Button(label=t("gui.clock.apply"), valign=Gtk.Align.CENTER)
+                btn.add_css_class("suggested-action")
+                btn.connect("clicked", lambda *_: self.run_change(["power", "--set-fast-startup", "off"],
+                                                                   lambda r: t("gui.fast.sent"), "boot"))
+                r.add_suffix(btn)
+                fix.add(r)
+            exp = Adw.ExpanderRow(title=esc(t("gui.fast.manual")), subtitle=esc(t("gui.fast.manual.desc")))
+            lbl = Gtk.Label(label=t("gui.fast.manual.steps"), wrap=True, xalign=0, margin_top=10, margin_bottom=12,
+                            margin_start=14, margin_end=14)
+            exp.add_row(lbl)
+            fix.add(exp)
+            content.append(fix)
+
+        g = Adw.PreferencesGroup(title=esc(t("gui.boot.title")), description=esc(t("gui.boot.desc")))
+        if not b.get("available"):
+            g.add(Adw.ActionRow(title=esc(t("gui.boot.unavailable"))))
+            content.append(g)
+        else:
+            first = Adw.ActionRow(title=esc(t("gui.boot.first")))
+            lab = Gtk.Label(label=b.get("first_label") or "?", valign=Gtk.Align.CENTER)
+            lab.add_css_class("heading")
+            first.add_suffix(lab)
+            g.add(first)
+            g.add(Adw.ActionRow(title=esc(t("gui.boot.linux_entry")),
+                                subtitle=esc(f"{b.get('linux_label') or '?'} · {b.get('linux_loader') or ''}")))
+            keep = Adw.ActionRow(title=esc(t("gui.boot.keep")),
+                                 subtitle=esc(t("gui.boot.keep.desc" if has_app else "gui.boot.keep.need_app")))
+            sw = Gtk.Switch(active=bool(b.get("keep_linux_first")), valign=Gtk.Align.CENTER)
+            sw.connect("state-set", lambda _w, state: self.run_change(["boot", "--keep", "on" if state else "off"],
+                                                                        lambda r: t("gui.boot.saved"), "boot") or False)
+            keep.add_suffix(sw)
+            keep.set_activatable_widget(sw)
+            g.add(keep)
+            content.append(g)
+            if b.get("windows_fixed_at"):
+                content.append(card(t("gui.boot.fixed", when=b["windows_fixed_at"]), "dialog-information-symbolic", "accent"))
+            if not b.get("first_is_linux"):
+                attention = True
+                content.append(card(t("gui.boot.windows_first", first=b.get("first_label") or "?")))
+                if b.get("grub_lists_windows") is False:
+                    content.append(card(t("gui.boot.no_windows_in_grub")))
+                fix = Adw.PreferencesGroup()
+                r = Adw.ActionRow(title=esc(t("gui.boot.put_first")), subtitle=esc(t("gui.boot.put_first.desc")))
+                btn = Gtk.Button(label=t("gui.clock.apply"), valign=Gtk.Align.CENTER)
+                btn.add_css_class("suggested-action")
+                btn.connect("clicked", lambda *_: self.run_change(["boot", "--linux-first", "--keep", "on"],
+                                                                   lambda r: t("gui.boot.done"), "boot"))
+                r.add_suffix(btn)
+                fix.add(r)
+                content.append(fix)
+        self.boot_page.set_needs_attention(attention)
+        self.boot_box.append(scrolled(content))
+
+
+class Window(_Tabs, Adw.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app, title=t("app.title"))
-        self.set_default_size(600, 700)
+        self.set_default_size(740, 720)
         self.checks: dict[str, Gtk.CheckButton] = {}
         self.blocked = False
 
@@ -150,10 +315,16 @@ class Window(Adw.ApplicationWindow):
         self.view = Adw.ViewStack()
         self.bt_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.clock_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.wifi_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.boot_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.bt_page = self.view.add_titled(self.bt_box, "bluetooth", t("tab.bluetooth"))
         self.bt_page.set_icon_name("bluetooth-active-symbolic")
+        self.wifi_page = self.view.add_titled(self.wifi_box, "wifi", t("tab.wifi"))
+        self.wifi_page.set_icon_name("network-wireless-symbolic")
         self.clock_page = self.view.add_titled(self.clock_box, "clock", t("tab.clock"))
         self.clock_page.set_icon_name("preferences-system-time-symbolic")
+        self.boot_page = self.view.add_titled(self.boot_box, "boot", t("tab.boot"))
+        self.boot_page.set_icon_name("system-reboot-symbolic")
         self.switcher = Adw.ViewSwitcher(stack=self.view, policy=Adw.ViewSwitcherPolicy.WIDE)
         self.stack.add_named(self.view, "results")
         self.stack.set_visible_child_name("start")
@@ -191,7 +362,9 @@ class Window(Adw.ApplicationWindow):
     def on_scan(self, res):
         self.title.set_subtitle(t("gui.source", source=res["windows"]["source"]))
         self.build_bluetooth(res)
+        self.build_wifi(res)
         self.build_clock(res)
+        self.build_boot(res)
         self.show("results")
 
     def sync(self, *_):
@@ -206,6 +379,9 @@ class Window(Adw.ApplicationWindow):
     def set_linux_clock(self, value):
         self.call(t("gui.syncing"), ["clock", "--set", value], self.after_change(
             lambda r: t("gui.clock.applied"), tab="clock"))
+
+    def run_change(self, args, message, tab):
+        self.call(t("gui.syncing"), args, self.after_change(message, tab=tab))
 
     def after_change(self, message, tab=None):
         def done(res):

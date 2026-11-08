@@ -106,6 +106,7 @@ jobs:
           $state = Join-Path $env:ProgramData 'DualPair'
           Remove-Item (Join-Path $state 'status.json') -ErrorAction SilentlyContinue
           # the window's path: a request answered by the SYSTEM task
+          "status (read only): " + (& $exe --status --json)
           $r = & $exe --run status --json | ConvertFrom-Json
           "answer: $($r | ConvertTo-Json -Compress -Depth 5)"
           if ($r.result.error) { throw "agent did not answer: $($r.result.error)" }
@@ -174,9 +175,11 @@ jobs:
           $ws.AppActivate($p.Id) | Out-Null
           Start-Sleep -Seconds 1
           Shot 'windows-bluetooth'
-          $ws.SendKeys('^{TAB}')
-          Start-Sleep -Seconds 2
-          Shot 'windows-clock'
+          foreach ($name in 'windows-wifi', 'windows-clock', 'windows-boot') {
+            $ws.SendKeys('^{TAB}')
+            Start-Sleep -Seconds 2
+            Shot $name
+          }
           Stop-Process $p -Force
           Remove-Item $root -Recurse -Force
 

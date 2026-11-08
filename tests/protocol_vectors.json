@@ -132,5 +132,110 @@
    }
   }
  ],
- "now": "2026-11-10T00:00:00Z"
+ "now": "2026-11-10T00:00:00Z",
+ "wifi_fingerprints": [
+  {
+   "ssid": "Casa",
+   "password": "una password",
+   "expected": "2c99d29e"
+  },
+  {
+   "ssid": "Bar Open",
+   "password": null,
+   "expected": "3c52f980"
+  },
+  {
+   "ssid": "Caffè",
+   "password": "12345678",
+   "expected": "3923c936"
+  }
+ ],
+ "valid_wifi_message": {
+  "dualpair": 1,
+  "id": "20261108-104600-b1c2d3",
+  "type": "wifi",
+  "from": "linux",
+  "created": "2026-11-08T10:46:00Z",
+  "expires": "2026-11-15T10:46:00Z",
+  "payload": {
+   "networks": [
+    {
+     "ssid": "Casa",
+     "security": "wpa-psk",
+     "password": "una password",
+     "hidden": false
+    },
+    {
+     "ssid": "Bar Open",
+     "security": "open",
+     "password": null,
+     "hidden": false
+    },
+    {
+     "ssid": "Caffè",
+     "security": "sae",
+     "password": "12345678",
+     "hidden": true
+    }
+   ]
+  }
+ },
+ "invalid_wifi_networks": [
+  {
+   "why": "ssid too long",
+   "network": {
+    "ssid": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "security": "wpa-psk",
+    "password": "12345678",
+    "hidden": false
+   }
+  },
+  {
+   "why": "password too short",
+   "network": {
+    "ssid": "A",
+    "security": "wpa-psk",
+    "password": "1234567",
+    "hidden": false
+   }
+  },
+  {
+   "why": "open with password",
+   "network": {
+    "ssid": "A",
+    "security": "open",
+    "password": "12345678",
+    "hidden": false
+   }
+  },
+  {
+   "why": "enterprise",
+   "network": {
+    "ssid": "A",
+    "security": "wpa-eap",
+    "password": "12345678",
+    "hidden": false
+   }
+  },
+  {
+   "why": "control character",
+   "network": {
+    "ssid": "A\nB",
+    "security": "wpa-psk",
+    "password": "12345678",
+    "hidden": false
+   }
+  }
+ ],
+ "valid_fast_startup_message": {
+  "dualpair": 1,
+  "id": "20261108-104700-c1d2e3",
+  "type": "set_fast_startup",
+  "from": "linux",
+  "created": "2026-11-08T10:47:00Z",
+  "expires": "2026-11-15T10:47:00Z",
+  "payload": {
+   "enabled": false
+  }
+ }
 }

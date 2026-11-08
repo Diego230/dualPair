@@ -38,6 +38,27 @@ confirmation, except `set_clock` (see below).
 ```
 
 - `clock.rtc_utc`: true if this system reads the hardware clock as UTC.
+Optional sections (since DualPair 0.4.0; readers must accept their absence):
+
+```json
+  "wifi": {"available": true, "networks": [
+    {"ssid": "Casa", "security": "wpa-psk", "hidden": false, "fingerprint": "9f3a1b2c"}]},
+  "power": {"fast_startup": true, "hibernated": false},          // Windows only
+  "boot": {                                                      // written by Linux
+    "linux_loader": "\\EFI\\ubuntu\\shimx64.efi", "keep_linux_first": true,
+    "first_is_linux": true}
+  "boot": {"first_loader": "\\EFI\\Microsoft\\Boot\\bootmgfw.efi", "fixed_at": null}   // written by Windows
+```
+
+- `wifi.networks[].security`: `open`, `wpa-psk` (WPA/WPA2-Personal) or `sae` (WPA3-Personal).
+  Enterprise (802.1X) and WEP networks are not shared.
+- `wifi.networks[].fingerprint`: first 8 hex digits of SHA-256 of
+  `dualpair-fp-v1|wifi|<ssid>|<password>` (UTF-8; empty password for open networks).
+- `power.fast_startup`: Windows Fast Startup (`HiberbootEnabled`); `null` if unknown.
+  `power.hibernated`: Windows is hibernated right now (Linux side, from `hiberfil.sys`).
+- `boot.keep_linux_first`: the user asked, in DualPair for Linux, to keep Linux first in the
+  firmware boot order. DualPair for Windows then puts the entry whose loader is
+  `boot.linux_loader` back first at each Windows start if Windows moved itself first.
 - `kind`: `classic`, `le` or `dual`.
 - `fingerprint`: lets each side tell whether both have the same key **without sharing it**:
   first 8 hex digits of SHA-256 of the ASCII text `dualpair-fp-v1|` followed by the key
@@ -84,6 +105,27 @@ Pairing keys for devices, sent so the other system can use them.
   message. Keys are never left on the ESP longer than needed: the sender deletes its own
   unhandled `keys` messages when it sends new ones, and expired messages are deleted.
 
+### `wifi`
+
+Saved Wi-Fi networks, with their passwords, sent so the other system can use them. Same rules
+as `keys`: the receiver imports only what the user confirms, then deletes the message.
+
+```json
+{"networks": [{"ssid": "Casa", "security": "wpa-psk", "password": "una password", "hidden": false}]}
+```
+
+- At most 64 networks. `ssid`: 1 to 32 bytes in UTF-8, no control characters.
+- `password`: `null` for `open`; otherwise 8 to 63 characters, or 64 hex digits.
+
+### `set_fast_startup`
+
+```json
+{"enabled": false}
+```
+
+Sent by Linux when the user chooses to turn Windows Fast Startup off there. Applied by DualPair for
+Windows at the next start (`HiberbootEnabled`), like `set_clock`.
+
 ### `set_clock`
 
 ```json
@@ -92,7 +134,7 @@ Pairing keys for devices, sent so the other system can use them.
 
 Sent by Linux when the user chooses "Windows in UTC" there. DualPair for Windows applies it at
 the next Windows start (`RealTimeIsUniversal`) without asking again, because the user already
-chose it, and deletes the message. Only this one setting can be changed this way.
+chose it, and deletes the message. Only `set_clock` and `set_fast_startup` are applied this way.
 
 ## Validation
 
@@ -105,6 +147,7 @@ chose it, and deletes the message. Only this one setting can be changed this way
 ## Trust
 
 Anyone who can write the ESP is root on Linux or administrator on Windows, who can already read
-the keys of their own system. The protocol adds no new way to read keys. It does let one system
-ask the other for two things only (update keys of devices already paired there, set the clock
-standard), each validated, and keys only with the user's confirmation.
+the keys and Wi-Fi passwords of their own system. The protocol adds no new way to read them. It does
+let one system ask the other for a fixed list of things (update keys of devices already paired
+there, add Wi-Fi networks, set the clock standard, turn Fast Startup on or off, keep Linux first in
+the boot order), each validated; keys and networks only with the user's confirmation.

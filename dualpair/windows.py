@@ -83,6 +83,8 @@ class WindowsData:
     rtc_utc: bool = False                # RealTimeIsUniversal=1: Windows reads the hardware clock as UTC
     timezone: str | None = None          # Windows time zone name, e.g. "W. Europe Standard Time"
     export_id: str | None = None         # set when the data comes from a DualPair for Windows export
+    fast_startup: bool | None = None     # Windows Fast Startup (HiberbootEnabled); None if unknown
+    hibernated: bool | None = None       # hiberfil.sys holds a hibernation image right now
 
 
 # ---------------------------------------------------------------- hive parsing
@@ -121,6 +123,12 @@ def read_hive(hive: Hive, source: str) -> WindowsData:
     devices_key = params.subkey("Devices") if params else None
 
     data = WindowsData(source=source, hive_dirty=hive.dirty, control_set=current, bt_present=keys is not None)
+    hiberboot = hive.open(r"ControlSet%03d\Control\Session Manager\Power" % current)
+    power = hive.open(r"ControlSet%03d\Control\Power" % current)
+    hb = hiberboot.get("HiberbootEnabled") if hiberboot is not None else None
+    hibernate = power.get("HibernateEnabled") if power is not None else None
+    if isinstance(hb, int):
+        data.fast_startup = bool(hb) and hibernate != 0   # no hibernation, no Fast Startup
     tz = hive.open(r"ControlSet%03d\Control\TimeZoneInformation" % current)
     if tz is not None:
         data.rtc_utc = tz.get("RealTimeIsUniversal") == 1     # DWORD or QWORD
@@ -222,6 +230,19 @@ def _umount(mnt: str):
         pass
 
 
+def hibernated(windows_root: str) -> bool | None:
+    """True if hiberfil.sys holds an image (Fast Startup or hibernation): the Windows partition
+    must not be written to, and its registry may not have the latest changes."""
+    p = _find_ci(windows_root, ("hiberfil.sys",))
+    if p is None:
+        return False
+    try:
+        with open(p, "rb") as f:
+            return f.read(4).lower() == b"hibr"
+    except OSError:
+        return None
+
+
 def _load(path: str, source: str) -> WindowsData:
     try:
         hive = Hive.from_file(path)
@@ -242,7 +263,9 @@ def load_windows(explicit: str | None = None) -> WindowsData:
         p = _find_ci(explicit, HIVE_RELPATH)
         if p is None:
             raise DualPairError("no_windows_at", path=explicit)
-        return _load(p, explicit)
+        data = _load(p, explicit)
+        data.hibernated = hibernated(explicit)
+        return data
 
     if os.geteuid() != 0:
         raise DualPairError("not_root")
@@ -267,7 +290,9 @@ def load_windows(explicit: str | None = None) -> WindowsData:
                         tempfile.NamedTemporaryFile(prefix="dualpair-hive-", delete=False) as tmp:
                     shutil.copyfileobj(src, tmp)
                 try:
-                    return _load(tmp.name, d["name"])
+                    data = _load(tmp.name, d["name"])
+                    data.hibernated = hibernated(mp)
+                    return data
                 finally:
                     os.unlink(tmp.name)
         finally:
