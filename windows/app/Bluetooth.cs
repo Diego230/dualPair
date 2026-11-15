@@ -214,7 +214,7 @@ namespace DualPair
                             k.SetValue("KeyLength", d.Le.EncSize, RegistryValueKind.DWord);
                             k.SetValue("ERand", unchecked((long)d.Le.Rand), RegistryValueKind.QWord);
                             k.SetValue("EDIV", d.Le.Ediv, RegistryValueKind.DWord);
-                            if (d.Le.Irk != null) k.SetValue("IRK", Protocol.FromHex(d.Le.Irk), RegistryValueKind.Binary);
+                            if (d.Le.Irk != null) k.SetValue("IRK", IrkInWindowsOrder(Protocol.FromHex(d.Le.Irk), k.GetValue("IRK") as byte[]), RegistryValueKind.Binary);
                         }
                         backup.Add(entry);
                         r.Result = "imported";
@@ -223,6 +223,16 @@ namespace DualPair
             }
             if (backup.Count > 0) SaveBackup(backup);
             return results;
+        }
+
+        /// <summary>Linux writes a device's identity key (IRK) least significant byte first; Windows
+        /// usually stores it the same way, but for some devices the other way round. When the key
+        /// Windows already has for the device is the incoming one reversed, keep Windows' order.</summary>
+        public static byte[] IrkInWindowsOrder(byte[] incoming, byte[] existing)
+        {
+            if (existing == null || existing.Length != incoming.Length) return incoming;
+            var reversed = incoming.Reverse().ToArray();
+            return existing.SequenceEqual(reversed) && !existing.SequenceEqual(incoming) ? reversed : incoming;
         }
 
         // ------------------------------------------------------------------ backups

@@ -97,7 +97,10 @@ Pairing keys for devices, sent so the other system can use them.
 ```
 
 - `link_key`, `ltk`, `irk`: 32 uppercase hex digits, in the byte order Windows stores them
-  (the same BlueZ uses). `rand` is a **string** (64-bit numbers do not fit in a JSON double).
+  (the same BlueZ uses for `link_key` and `ltk`). For `irk` most devices use the same order on both
+  systems and a few the opposite one: Linux sends the IRK in Windows' order when it has verified it
+  (see the README, *Bluetooth LE identity keys*), and Windows, when it imports, keeps the order it
+  already uses for that device (if its current IRK is the received one reversed, it writes it reversed). `rand` is a **string** (64-bit numbers do not fit in a JSON double).
 - At most 64 devices. `enc_size` 7-16, `ediv` 0-65535, `authenticated` 0-4.
 - Windows only updates devices that are already paired in Windows (a device must exist in
   Windows' device list; DualPair does not create it). Linux can import new devices.

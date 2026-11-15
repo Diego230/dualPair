@@ -82,13 +82,16 @@ def build(d):
                     f"[wifi-security]\nkey-mgmt={sec}\npsk={psk}\n\n[ipv4]\nmethod=auto\n")
     # mouse and keyboard already shared; the headphones were paired again on Linux, with a different key
     helper(d, ["--json", "sync", MOUSE_MAC, KEYBOARD_MAC])
+    from dualpair import sync
+    for mac, irk in ((MOUSE_MAC, "7E21B9D4A6038F5C1D9E2B7A4C6F8E03"), (KEYBOARD_MAC, "A1A2A3A4A5A6A7A8A9AAABACADAEAFB0")):
+        sync.save_irk_check(p["state"], "C4:13:75:C0:E2:E6", mac, irk, "stored")   # as if checked by radio
     hp = os.path.join(p["bt"], "C4:13:75:C0:E2:E6", "A4:BF:C6:D0:E5:FF")
     os.makedirs(hp, exist_ok=True)
     with open(os.path.join(hp, "info"), "w") as f:
         f.write("[General]\nName=WH-1000XM4\nClass=0x240404\nTrusted=true\nBlocked=false\n\n"
                 "[LinkKey]\nKey=0F1E2D3C4B5A69788796A5B4C3D2E1F0\nType=4\nPINLength=0\n")
     status = {
-        "dualpair": 1, "system": "windows", "version": "0.4.1", "written": mailbox.iso(mailbox.utcnow()),
+        "dualpair": 1, "system": "windows", "version": "0.5.0", "written": mailbox.iso(mailbox.utcnow()),
         "clock": {"rtc_utc": False, "timezone": "W. Europe Standard Time"},
         "bluetooth": {"available": True, "devices": []},
         "wifi": {"available": True, "networks": [

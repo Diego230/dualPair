@@ -123,6 +123,7 @@ descrizione             ubuntu
             {
                 VectorTests(vectors);
                 WifiVectorTests(vectors);
+                IrkOrderTests();
                 Seed();
                 StoreTests(opt);
                 ImportTests(opt);
@@ -140,6 +141,16 @@ descrizione             ubuntu
             }
             Console.WriteLine(failures == 0 ? "ALL PASSED" : failures + " FAILED");
             return failures == 0 ? 0 : 1;
+        }
+
+        static void IrkOrderTests()
+        {
+            var incoming = Protocol.FromHex("7E21B9D4A6038F5C1D9E2B7A4C6F8E03");
+            var reversed = incoming.Reverse().ToArray();
+            Check(BluetoothStore.IrkInWindowsOrder(incoming, null).SequenceEqual(incoming), "IRK: no Windows key, written as received");
+            Check(BluetoothStore.IrkInWindowsOrder(incoming, incoming).SequenceEqual(incoming), "IRK: same order kept");
+            Check(BluetoothStore.IrkInWindowsOrder(incoming, reversed).SequenceEqual(reversed), "IRK: Windows' reversed order kept");
+            Check(BluetoothStore.IrkInWindowsOrder(incoming, new byte[16]).SequenceEqual(incoming), "IRK: other key, written as received");
         }
 
         static void VectorTests(Dictionary<string, object> v)

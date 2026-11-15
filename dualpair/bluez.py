@@ -77,6 +77,11 @@ class LinuxDevice:
             return s.get("Key", "").upper(), -1, -1
 
     @property
+    def irk(self) -> str | None:
+        k = self.cfg.get("IdentityResolvingKey", "Key", fallback=None)
+        return k.upper() if k and len(k) == 32 else None
+
+    @property
     def paired(self) -> bool:
         return bool(self.link_key or self.ltk)
 

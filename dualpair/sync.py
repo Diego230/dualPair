@@ -3,6 +3,7 @@
 """Compare Windows and Linux pairings and copy Windows keys into BlueZ."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -11,7 +12,7 @@ import subprocess
 import time
 from dataclasses import dataclass, field
 
-from . import bluez
+from . import bluez, rpa
 from .errors import DualPairError
 from .windows import WindowsData, WinDevice
 
@@ -27,6 +28,13 @@ WINDOWS_ONLY = "windows_only"  # paired only on Windows -> import into Linux
 LINUX_ONLY = "linux_only"      # paired only on Linux -> pair it on Windows first
 ACTIONABLE = (NEEDS_SYNC, WINDOWS_ONLY)
 
+# How DualPair knows the byte order of a Bluetooth LE identity key (IRK), see rpa.py
+IRK_LINUX = "linux_pairing"   # Linux paired the device itself and has the same key: its order is right
+IRK_RADIO = "radio"           # checked against the addresses the device sends
+IRK_UNVERIFIED = "unverified" # no evidence: the key is copied as Windows stores it (right for most devices)
+IRK_CHECKS = "irk-check.json"     # results of radio checks
+IRK_WRITTEN = "irk-written.json"  # keys DualPair itself wrote: they prove nothing about the order
+
 
 @dataclass
 class Plan:
@@ -38,12 +46,16 @@ class Plan:
     kind: str
     win: WinDevice | None = None
     linux: bluez.LinuxDevice | None = None
+    irk: str | None = None          # the IRK to write into BlueZ (Windows' key, maybe reversed)
+    irk_check: str | None = None    # IRK_* or None (no IRK)
 
     @property
     def newer(self) -> str | None:
         """For keys that differ: which system stored its keys last (a hint of who paired last)."""
         if self.status != NEEDS_SYNC or not self.win or not self.linux:
             return None
+        if _matches(self.win, self.linux, None, None):
+            return None     # same pairing; only the identity key order is being corrected
         w, l = self.win.paired_at, self.linux.paired_at
         if not w or not l:
             return None
@@ -59,7 +71,12 @@ class Plan:
             "status": self.status, "address": self.address, "name": self.name, "kind": self.kind,
             "adapter_linux": self.adapter_linux, "adapter_windows": self.adapter_windows,
             "experimental": self.experimental, "newer": self.newer,
+            "irk_check": self.irk_check, "irk_reversed": self.irk_reversed,
         }
+
+    @property
+    def irk_reversed(self) -> bool:
+        return bool(self.irk and self.win and self.win.le and self.irk != self.win.le.irk)
 
 
 @dataclass
@@ -92,16 +109,69 @@ def _map_adapters(win: list[str], lin: list[str], notes: list) -> dict[str, str]
     return mapping
 
 
-def _matches(w: WinDevice, l: bluez.LinuxDevice) -> bool:
+def _matches(w: WinDevice, l: bluez.LinuxDevice, irk: str | None, irk_check: str | None) -> bool:
     if w.link_key and l.link_key != w.link_key:
         return False
     if w.le:
         if l.ltk != (w.le.ltk, w.le.ediv, w.le.rand):
             return False
+        # a wrong identity key breaks reconnecting; only judged when the right order is known
+        if irk and irk_check in (IRK_LINUX, IRK_RADIO) and (l.irk or "") != irk:
+            return False
     return True
 
 
-def scan(windows: WindowsData, bluez_root: str = bluez.BLUEZ_DIR) -> Scan:
+# ---------------------------------------------------------------- IRK byte order
+def irk_fp(irk: str | None) -> str | None:
+    return hashlib.sha256(irk.upper().encode()).hexdigest()[:16] if irk else None
+
+
+def _load_state(state_dir: str, name: str) -> dict:
+    try:
+        with open(os.path.join(state_dir, name)) as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_state(state_dir: str, name: str, data: dict):
+    os.makedirs(state_dir, mode=0o700, exist_ok=True)
+    path = os.path.join(state_dir, name)
+    tmp = path + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(data, f, indent=1, sort_keys=True)
+    os.replace(tmp, path)
+
+
+def save_irk_check(state_dir: str, adapter_linux: str, address: str, windows_irk: str, order: str):
+    data = _load_state(state_dir, IRK_CHECKS)
+    data[f"{adapter_linux}/{address}"] = {"order": order, "windows_irk": irk_fp(windows_irk),
+                                          "checked": time.strftime("%Y-%m-%dT%H:%M:%S")}
+    _save_state(state_dir, IRK_CHECKS, data)
+
+
+def _irk_choice(w: WinDevice, la: str, lin_devs: dict, checks: dict, written: dict):
+    """(IRK to write, how its byte order is known) for a Windows device with an IRK."""
+    wirk = w.le.irk
+    rev = rpa.reverse_hex(wirk)
+    c = checks.get(f"{la}/{w.address}")
+    if isinstance(c, dict) and c.get("windows_irk") == irk_fp(wirk) and c.get("order") in (rpa.STORED, rpa.REVERSED):
+        return (wirk if c["order"] == rpa.STORED else rev), IRK_RADIO
+    # the same device paired by Linux itself (maybe under another address): its key has the right order
+    same = lin_devs.get(w.address)
+    for l in ([same] if same else []) + [d for a, d in lin_devs.items() if a != w.address]:
+        if not l.irk or written.get(f"{la}/{l.address}") == irk_fp(l.irk):
+            continue
+        if l.irk == wirk:
+            return wirk, IRK_LINUX
+        if l.irk == rev:
+            return rev, IRK_LINUX
+    return wirk, IRK_UNVERIFIED
+
+
+def scan(windows: WindowsData, bluez_root: str = bluez.BLUEZ_DIR, state_dir: str = STATE_DIR) -> Scan:
     if bluez_root == bluez.BLUEZ_DIR and os.geteuid() != 0:
         raise DualPairError("not_root")
     s = Scan(windows, bluez_root)
@@ -115,6 +185,7 @@ def scan(windows: WindowsData, bluez_root: str = bluez.BLUEZ_DIR) -> Scan:
         return s
     mapping = _map_adapters(windows.adapters, lin_adapters, s.notes)
     lin_devs = {a: bluez.devices(a, bluez_root) for a in lin_adapters}
+    checks, written = _load_state(state_dir, IRK_CHECKS), _load_state(state_dir, IRK_WRITTEN)
     seen = set()
     for w in windows.devices:
         la = mapping.get(w.adapter)
@@ -122,12 +193,14 @@ def scan(windows: WindowsData, bluez_root: str = bluez.BLUEZ_DIR) -> Scan:
             continue
         l = lin_devs[la].get(w.address)
         seen.add((la, w.address))
+        irk, irk_check = (_irk_choice(w, la, lin_devs[la], checks, written)
+                          if w.le and w.le.irk else (None, None))
         if l is None or not l.paired:
             status = WINDOWS_ONLY
         else:
-            status = IN_SYNC if _matches(w, l) else NEEDS_SYNC
+            status = IN_SYNC if _matches(w, l, irk, irk_check) else NEEDS_SYNC
         s.plans.append(Plan(status, w.address, la, w.adapter, w.name or (l.name if l else None),
-                            w.kind, w, l))
+                            w.kind, w, l, irk, irk_check))
     for la in lin_adapters:
         for addr, l in lin_devs[la].items():
             if (la, addr) not in seen and l.paired:
@@ -190,7 +263,7 @@ def build_info(p: Plan):
         if le.irk:
             if not cfg.has_section("IdentityResolvingKey"):
                 cfg.add_section("IdentityResolvingKey")
-            cfg["IdentityResolvingKey"]["Key"] = le.irk
+            cfg["IdentityResolvingKey"]["Key"] = p.irk or le.irk
     return cfg
 
 
@@ -266,6 +339,11 @@ def apply(s: Scan, addresses: list[str] | None, state_dir: str = STATE_DIR,
             cache = os.path.join(s.bluez_root, p.adapter_linux, "cache", p.address)
             if os.path.isfile(cache):
                 os.remove(cache)
+        written = _load_state(state_dir, IRK_WRITTEN)
+        for p in todo:
+            if p.irk:
+                written[f"{p.adapter_linux}/{p.address}"] = irk_fp(p.irk)
+        _save_state(state_dir, IRK_WRITTEN, written)
     finally:
         _systemctl("start", restart)
     prune_backups(state_dir)

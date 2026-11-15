@@ -425,6 +425,9 @@ class Window(_Tabs, Adw.ApplicationWindow):
             content.append(self._group(t("gui.group.todo"), t("gui.group.todo.desc"), todo, "todo"))
         if to_windows:
             content.append(self._send_group(to_windows))
+        unverified = [d for d in devices if d.get("irk_check") == "unverified"]
+        if unverified:
+            content.append(self._irk_group(unverified))
         if ok:
             content.append(self._group(t("gui.group.ok"), None, ok, "ok"))
         if lin:
@@ -438,6 +441,24 @@ class Window(_Tabs, Adw.ApplicationWindow):
             bar.append(self.sync_btn)
             self.bt_box.append(bar)
             self._update_sync_button()
+
+    def _irk_group(self, devices):
+        names = ", ".join(d.get("name") or d["address"] for d in devices)
+        g = Adw.PreferencesGroup(title=esc(t("gui.irk.title")), description=esc(t("gui.irk.desc", names=names)))
+        btn = Gtk.Button(label=t("gui.irk.button"), halign=Gtk.Align.START, margin_top=10)
+        btn.connect("clicked", lambda *_: self.verify_irk())
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        box.append(g)
+        box.append(btn)
+        return box
+
+    def verify_irk(self):
+        def done(res):
+            devs = res["irk_check"]["devices"]
+            ok = sum(1 for d in devs if d["result"] != "not_heard")
+            self.toast(t("gui.irk.done", ok=ok, n=len(devs)) if ok else t("gui.irk.none"))
+            self.scan()
+        self.call(t("gui.irk.listening"), ["verify-irk"], done)
 
     def _windows_app_line(self):
         w = self.windows_app
@@ -497,6 +518,10 @@ class Window(_Tabs, Adw.ApplicationWindow):
                 sub += f"\n{t('status.' + d['status'])}"
             elif kind == "linux":
                 sub += f"\n{t('status.linux_only')}"
+            if d.get("irk_check") == "unverified":
+                sub += f"\n{t('gui.irk.unverified')}"
+            elif d.get("irk_reversed"):
+                sub += f"\n{t('gui.irk.reversed')}"
             row = Adw.ActionRow(title=esc(d.get("name") or d["address"]), subtitle=esc(sub))
             if kind == "todo":
                 check = Gtk.CheckButton(active=True, valign=Gtk.Align.CENTER)

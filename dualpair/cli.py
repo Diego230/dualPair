@@ -8,7 +8,7 @@ import json
 import os
 import sys
 
-from . import __version__, bluez, boot, clock, mailbox, sync, wifi
+from . import __version__, bluez, boot, clock, mailbox, radio, rpa, sync, wifi
 from .errors import DualPairError
 from .i18n import t
 from .windows import load_windows
@@ -52,6 +52,10 @@ def _parser():
     bo.add_argument("--linux-first", action="store_true", help="put Linux first in the boot order now")
     bo.add_argument("--keep", choices=("on", "off"),
                     help="keep Linux first: DualPair for Windows restores it after Windows updates")
+    vi = sub.add_parser("verify-irk", help="check the byte order of Bluetooth LE identity keys against the "
+                                           "addresses the devices send (turn them on and use them meanwhile)")
+    vi.add_argument("--seconds", type=int, default=20, choices=range(5, 61), metavar="5-60",
+                    help="how long to listen (default 20)")
     pe = sub.add_parser("pending", help="messages waiting for DualPair for Windows")
     pe.add_argument("--cancel", metavar="ID", help="withdraw a message")
     sub.add_parser("backups", help="list backups")
@@ -82,12 +86,14 @@ def _print_scan(s: sync.Scan):
     for p in s.plans:
         exp = f" [{t('experimental')}]" if p.experimental else ""
         newer = f" ({t('newer.' + p.newer)})" if p.newer else ""
-        print(f"  {p.address}  {(p.name or '?')[:28]:28}  {t('kind.' + p.kind):14}  {t('status.' + p.status)}{exp}{newer}")
+        irk = f" [{t('gui.irk.unverified')}]" if p.irk_check == sync.IRK_UNVERIFIED else ""
+        print(f"  {p.address}  {(p.name or '?')[:28]:28}  {t('kind.' + p.kind):14}  {t('status.' + p.status)}{exp}{newer}{irk}")
     if any(p.status in sync.ACTIONABLE for p in s.plans):
         print(t("cli.hint_sync"))
 
 
-READ_ONLY_COMMANDS = ("scan", "backups", "clock", "pending", "wifi", "power", "boot")
+# verify-irk only records which byte order a device's own radio messages confirm: no system change
+READ_ONLY_COMMANDS = ("scan", "backups", "clock", "pending", "wifi", "power", "boot", "verify-irk")
 
 
 def check_allowed(a, read_only: bool):
@@ -221,6 +227,31 @@ def clock_info(win, mb) -> dict:
     return c
 
 
+def verify_irk(s: "sync.Scan", seconds: int, state_dir: str) -> dict:
+    """Listen to the radio and work out, for each LE device with an IRK, which byte order is right."""
+    plans = [p for p in s.plans if p.win and p.win.le and p.win.le.irk and p.adapter_linux]
+    out = {"addresses_heard": 0, "devices": []}
+    for la in sorted({p.adapter_linux for p in plans}):
+        rpas, seen = radio.listen(la, seconds)
+        out["addresses_heard"] += len(rpas) + len(seen)
+        for p in (p for p in plans if p.adapter_linux == la):
+            wirk = p.win.le.irk
+            order = rpa.order_for(wirk, rpas)
+            if order:
+                result = order
+            elif p.address in seen:
+                # heard under its own address: Linux already recognises it, or it does not hide its address
+                lirk = p.linux.irk if p.linux else None
+                order = rpa.REVERSED if lirk and lirk == rpa.reverse_hex(wirk) else rpa.STORED
+                result = "works"
+            else:
+                out["devices"].append({"address": p.address, "name": p.name, "result": "not_heard"})
+                continue
+            sync.save_irk_check(state_dir, la, p.address, wirk, order)
+            out["devices"].append({"address": p.address, "name": p.name, "result": result})
+    return out
+
+
 def run(a) -> int:
     restart = not a.no_restart and a.bluez_dir == bluez.BLUEZ_DIR
     if a.cmd == "backups":
@@ -319,7 +350,17 @@ def run(a) -> int:
                 _print_clock(c)
             return 0
 
-        s = sync.scan(load(a, mb), a.bluez_dir)
+        s = sync.scan(load(a, mb), a.bluez_dir, a.state_dir)
+
+        if a.cmd == "verify-irk":
+            res = verify_irk(s, a.seconds, a.state_dir)
+            if a.json:
+                print(json.dumps({"irk_check": res}))
+            else:
+                print(t("cli.irk.heard", n=res["addresses_heard"]))
+                for d in res["devices"]:
+                    print(f"  {d['address']}  {(d['name'] or '?')[:28]:28}  {t('irk.result.' + d['result'])}")
+            return 0
 
         if a.cmd == "send-to-windows":
             if not mb:
@@ -333,6 +374,8 @@ def run(a) -> int:
             for p in plans:
                 k = p.linux.keys()
                 k.adapter = p.adapter_windows or p.adapter_linux   # Windows' name for the adapter
+                if k.le and k.le.irk and p.irk_reversed:           # Windows keeps this device's IRK reversed
+                    k.le.irk = rpa.reverse_hex(k.le.irk)
                 devices.append(mailbox.device_to_json(k))
             mid = mailbox.send(mb, "windows", "keys", {"devices": devices})
             res = {"sent": [p.to_dict() for p in plans], "message_id": mid}

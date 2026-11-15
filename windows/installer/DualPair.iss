@@ -1,7 +1,7 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
 ; Copyright (C) 2026 Diego Buono
 ; Installer for DualPair for Windows (Inno Setup 6.3+). Built by CI:  iscc installer\DualPair.iss
-#define AppVersion "0.4.1"
+#define AppVersion "0.5.0"
 
 [Setup]
 AppId={{8F2C4D3B-6E1A-4F7B-9C2D-1A5B3E7F9D10}

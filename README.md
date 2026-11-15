@@ -25,7 +25,7 @@ No network access, no telemetry, nothing changes without your confirmation.
 </p>
 <p align="center"><sub>Screenshots on invented demo data (<code>tools/screenshots/</code>).</sub></p>
 
-> **Status: beta (0.4.1).** Tested on one real dual-boot PC so far (see [Tested on](#tested-on)). **Testers wanted:** if you try it, please [tell how it went](https://github.com/Diego230/dualPair/issues/new/choose), whether it worked or not, with your hardware.
+> **Status: beta (0.5.0).** Tested on one real dual-boot PC so far (see [Tested on](#tested-on)). **Testers wanted:** if you try it, please [tell how it went](https://github.com/Diego230/dualPair/issues/new/choose), whether it worked or not, with your hardware.
 
 ## Download and install
 
@@ -136,6 +136,18 @@ To undo the last sync, open the menu and choose **Undo last sync**.
 - DualPair writes them into BlueZ (`/var/lib/bluetooth/<adapter>/<device>/info`). It keeps everything else in the existing file and backs up every file it changes to `/var/lib/dualpair/backups`.
 - The window runs as your user. Reading and writing system files is done by small helpers started with `pkexec` (see [Security](#security)).
 
+### Bluetooth LE identity keys
+
+Many Bluetooth LE mice and keyboards hide their address: they advertise under a random one that changes every few minutes. The computer recognises them with the device's *identity resolving key* (IRK), exchanged at pairing. Windows and Linux store this key with the bytes in the same order for most devices, but in the opposite order for some (the [ArchWiki](https://wiki.archlinux.org/title/Bluetooth#Dual_boot_pairing) lists a few), and with the wrong order the device does not reconnect.
+
+DualPair does not guess. For each device it looks for evidence, in this order:
+
+1. **A radio check** (*Check now* in the Bluetooth tab, or `dualpair-cli verify-irk`): DualPair listens for 20 seconds while you use the devices. A random address carries a hash made with the IRK, so DualPair tries both byte orders and keeps the one that produces the addresses the device really sends (with a small pure-Python AES-128 in `dualpair/rpa.py`, checked against the FIPS-197 and Bluetooth Core spec test vectors). Nothing is changed during the check.
+2. **A pairing made by Linux itself**, under the same or another address: its key is in Linux's order, so comparing it with Windows' key settles the order. Keys that DualPair wrote itself are not used as evidence.
+3. Otherwise the key is copied as Windows stores it, and the device is marked *byte order not checked yet*.
+
+When DualPair for Windows imports keys from Linux, it keeps the order Windows already uses for that device.
+
 Device states:
 
 | State | Meaning | Action |
@@ -172,6 +184,7 @@ sudo dualpair-cli scan                 # list devices and their state
 sudo dualpair-cli sync --all           # copy every key that needs it
 sudo dualpair-cli sync FC:C2:07:3C:8A:D2
 sudo dualpair-cli sync --all --dry-run # show the files it would write (keys hidden; add --show-keys to see them)
+sudo dualpair-cli verify-irk           # check Bluetooth LE identity key byte order by radio (use the devices meanwhile)
 sudo dualpair-cli backups
 sudo dualpair-cli restore              # undo the last sync
 sudo dualpair-cli --win /path/to/SYSTEM scan   # use a specific hive file or Windows folder
@@ -192,7 +205,7 @@ Add `--json` for machine-readable output.
 - **Fast Startup / hibernation**: if Windows was not fully shut down, the registry file can be out of date. DualPair detects this and refuses to sync (`--force` overrides it in the CLI).
 - **New classic devices** (paired only in Windows, e.g. headphones) are imported with a guessed key type and marked *experimental*. Devices already paired in Linux keep their key type and are reliable.
 - **Devices that change address on every pairing** (some BLE devices): they show up as a new device. Importing it works, and the old Linux entry stays as *Only in Linux*.
-- **IRK byte order**: copied as stored by Windows, like most existing tools do. It only matters for devices that use private addresses.
+- **IRK byte order**: see [Bluetooth LE identity keys](#bluetooth-le-identity-keys). A device whose order cannot be checked (it is not heard during the check) keeps the order Windows uses, which is right for most devices.
 - On Linux: BlueZ and NetworkManager only. Packaged as a `.deb` for Ubuntu 22.04+ and Debian 12+ (needs libadwaita ≥ 1.1); other distributions can run it from source.
 
 ## Building and testing
@@ -246,6 +259,7 @@ git push origin v0.4.2
 | `dualpair/windows.py` | Finds the Windows partition and reads the Bluetooth keys |
 | `dualpair/bluez.py` | Reads and writes BlueZ `info` files |
 | `dualpair/sync.py` | Compares, syncs, backs up, restores |
+| `dualpair/rpa.py`, `dualpair/radio.py` | Bluetooth LE private addresses and identity keys; listening through BlueZ |
 | `dualpair/cli.py` | Command line and privileged helper (`--json`) |
 | `dualpair/clock.py` | Hardware clock check and Linux-side fix |
 | `dualpair/mailbox.py` | Exchange with DualPair for Windows through the EFI partition |

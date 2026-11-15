@@ -23,7 +23,7 @@ namespace DualPair
 {
     public static class Program
     {
-        public const string Version = "0.4.1";
+        public const string Version = "0.5.0";
 
         public static bool IsAdmin()
         {
